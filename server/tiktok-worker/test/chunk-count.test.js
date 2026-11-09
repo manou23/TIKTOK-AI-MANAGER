@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { expectedChunkCount } from "./src/index.js";
+import { expectedChunkCount } from "../src/index.js";
 
 const MB = 1024 * 1024;
 
