@@ -442,7 +442,8 @@ class MainActivity : Activity() {
         val gain = percent.coerceIn(0, 100) / 100f
         val processor = ChannelMixingAudioProcessor()
         for (channels in 1..6) {
-            val matrix = ChannelMixingMatrix.createForConstantGain(channels, channels).scaleBy(gain)
+            val coefficients = FloatArray(channels * channels) { index -> if (index / channels == index % channels) gain else 0f }
+            val matrix = ChannelMixingMatrix(channels, channels, coefficients)
             processor.putChannelMixingMatrix(matrix)
         }
         return listOf(processor)
