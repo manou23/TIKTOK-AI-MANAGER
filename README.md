@@ -7,7 +7,7 @@
 
 <p align="center">
   <a href="https://github.com/manou23/TIKTOK-AI-MANAGER/actions/workflows/android.yml"><img src="https://github.com/manou23/TIKTOK-AI-MANAGER/actions/workflows/android.yml/badge.svg" alt="Android Build"></a>
-  <img src="https://img.shields.io/badge/Version-2.0.0-blue" alt="Version 2.0.0">
+  <img src="https://img.shields.io/badge/Version-2.0.1-blue" alt="Version 2.0.0">
   <img src="https://img.shields.io/badge/Platform-Android-green" alt="Android">
   <img src="https://img.shields.io/badge/Language-Kotlin-purple" alt="Kotlin">
   <img src="https://img.shields.io/badge/API-TikTok%20Official-000000" alt="TikTok Official API">
@@ -30,10 +30,10 @@
 
 | معلومات المشروع | التفاصيل |
 |---|---|
-| الإصدار الحالي | **2.0.0** |
+| الإصدار الحالي | **2.0.1** |
 | Android | 10 أو أحدث (minSdk 29) |
 | لغة التطبيق | Kotlin |
-| versionCode | 11 |
+| versionCode | 12 |
 | معرّف التطبيق | com.mesut.tiktokmanager |
 | الفرع الأساسي | main |
 
@@ -97,6 +97,7 @@
 | **1.7.0** | موثوقية التصدير | التحقق من سلامة ملف الفيديو بعد التصدير. |
 | **1.8.0** | ربط الحساب | TikTok Login Kit وPKCE وخادم آمن للرموز. |
 | **1.9.0** | النشر | الرفع المباشر ومتابعة حالة النشر عبر TikTok API. |
+| **2.0.1** | تحسين الأداء والموثوقية | رفع الفيديو بتدفق محدود الذاكرة، وتحسين إلغاء المهام المجدولة، وفحص حجم الفيديو قبل النشر. |
 | **2.0.0** | الإدارة والجدولة | جدولة النشر، إدارة المهام، ولوحة تحليلات الفيديو. |
 
 ## 🛠️ التثبيت والإعداد
