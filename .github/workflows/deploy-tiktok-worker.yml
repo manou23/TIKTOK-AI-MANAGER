@@ -1,0 +1,85 @@
+name: Deploy TikTok Cloudflare Worker
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Validate deployment secrets and configure KV
+        working-directory: server/tiktok-worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          TIKTOK_KV_NAMESPACE_ID: ${{ secrets.TIKTOK_KV_NAMESPACE_ID }}
+          TIKTOK_CLIENT_KEY: ${{ secrets.TIKTOK_CLIENT_KEY }}
+          TIKTOK_CLIENT_SECRET: ${{ secrets.TIKTOK_CLIENT_SECRET }}
+          TIKTOK_REDIRECT_URI: ${{ secrets.TIKTOK_REDIRECT_URI }}
+          TOKEN_ENCRYPTION_KEY: ${{ secrets.TOKEN_ENCRYPTION_KEY }}
+        run: |
+          set -euo pipefail
+          for name in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID TIKTOK_KV_NAMESPACE_ID TIKTOK_CLIENT_KEY TIKTOK_CLIENT_SECRET TIKTOK_REDIRECT_URI TOKEN_ENCRYPTION_KEY; do
+            if [ -z "${!name}" ]; then
+              echo "::error::Missing GitHub Actions secret: $name"
+              exit 1
+            fi
+          done
+          if ! [[ "$TIKTOK_KV_NAMESPACE_ID" =~ ^[A-Za-z0-9_-]{20,64}$ ]]; then
+            echo "::error::TIKTOK_KV_NAMESPACE_ID does not look like a Cloudflare KV namespace ID"
+            exit 1
+          fi
+          if ! [[ "$TOKEN_ENCRYPTION_KEY" =~ ^[0-9a-fA-F]{64}$ ]]; then
+            echo "::error::TOKEN_ENCRYPTION_KEY must be 64 hexadecimal characters"
+            exit 1
+          fi
+          sed -i "s/REPLACE_WITH_YOUR_CLOUDFLARE_KV_NAMESPACE_ID/$TIKTOK_KV_NAMESPACE_ID/" wrangler.toml
+
+      - name: Install Worker tooling
+        working-directory: server/tiktok-worker
+        run: npm install
+
+      - name: Upload encrypted runtime secrets to Cloudflare
+        working-directory: server/tiktok-worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          TIKTOK_CLIENT_KEY: ${{ secrets.TIKTOK_CLIENT_KEY }}
+          TIKTOK_CLIENT_SECRET: ${{ secrets.TIKTOK_CLIENT_SECRET }}
+          TIKTOK_REDIRECT_URI: ${{ secrets.TIKTOK_REDIRECT_URI }}
+          TOKEN_ENCRYPTION_KEY: ${{ secrets.TOKEN_ENCRYPTION_KEY }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$TIKTOK_CLIENT_KEY" | npx wrangler secret put TIKTOK_CLIENT_KEY
+          printf '%s' "$TIKTOK_CLIENT_SECRET" | npx wrangler secret put TIKTOK_CLIENT_SECRET
+          printf '%s' "$TIKTOK_REDIRECT_URI" | npx wrangler secret put TIKTOK_REDIRECT_URI
+          printf '%s' "$TOKEN_ENCRYPTION_KEY" | npx wrangler secret put TOKEN_ENCRYPTION_KEY
+
+      - name: Deploy Worker
+        working-directory: server/tiktok-worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npx wrangler deploy
+
+      - name: Verify Worker health
+        env:
+          TIKTOK_WORKER_URL: ${{ secrets.TIKTOK_WORKER_URL }}
+        run: |
+          set -euo pipefail
+          if [ -z "$TIKTOK_WORKER_URL" ]; then
+            echo "::error::Missing GitHub Actions secret: TIKTOK_WORKER_URL"
+            exit 1
+          fi
+          curl --fail --silent --show-error "${TIKTOK_WORKER_URL%/}/health"
