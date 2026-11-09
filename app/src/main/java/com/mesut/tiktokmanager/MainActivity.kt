@@ -409,6 +409,9 @@ class MainActivity : Activity() {
             try {
                 uploadFile = copyLastVideoToCache()
                 val videoSize = uploadFile.length()
+                if (videoSize <= 0L || videoSize > 4L * 1024L * 1024L * 1024L) {
+                    throw IllegalStateException("حجم ملف الفيديو غير صالح للنشر أو يتجاوز الحد المسموح.")
+                }
                 val minimumChunkSize = 5L * 1024L * 1024L
                 val tenMb = 10L * 1024L * 1024L
                 val chunkSize = when {
@@ -418,7 +421,7 @@ class MainActivity : Activity() {
                 }
                 val totalChunks = ((videoSize + chunkSize - 1L) / chunkSize).toInt()
                 val initPayload = JSONObject()
-                    .put("title", caption)
+                    .put("title", caption.take(2200))
                     .put("privacy_level", privacy)
                     .put("video_size", uploadFile.length())
                     .put("chunk_size", chunkSize)
