@@ -55,6 +55,7 @@ import java.io.FileOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
 import java.security.KeyStore
+import java.security.SecureRandom
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
@@ -141,12 +142,15 @@ class MainActivity : Activity() {
         }
         try {
             val verifier = PKCEUtils.generateCodeVerifier()
-            prefs.edit().putString("tiktok_code_verifier", verifier).apply()
+            val stateBytes = ByteArray(32).also { SecureRandom().nextBytes(it) }
+            val state = Base64.encodeToString(stateBytes, Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING)
+            prefs.edit().putString("tiktok_code_verifier", verifier).putString("tiktok_oauth_state", state).apply()
             val request = AuthRequest(
                 clientKey = BuildConfig.TIKTOK_CLIENT_KEY,
                 scope = "user.info.basic,video.publish",
                 redirectUri = BuildConfig.TIKTOK_REDIRECT_URI,
-                codeVerifier = verifier
+                codeVerifier = verifier,
+                state = state
             )
             AuthApi(activity = this).authorize(request, AuthApi.AuthMethod.TikTokApp)
         } catch (e: Exception) {
@@ -158,8 +162,15 @@ class MainActivity : Activity() {
         if (intent == null || BuildConfig.TIKTOK_CLIENT_KEY.isBlank()) return
         try {
             val response = AuthApi(activity = this).getAuthResponseFromIntent(intent, BuildConfig.TIKTOK_REDIRECT_URI) ?: return
-            if (response.authCode.isNullOrBlank()) {
+            val expectedState = prefs.getString("tiktok_oauth_state", null)
+            if (expectedState.isNullOrBlank() || response.state != expectedState) {
+                prefs.edit().remove("tiktok_code_verifier").remove("tiktok_oauth_state").apply()
+                Toast.makeText(this, "تم رفض رد تسجيل الدخول لأن قيمة الحماية غير متطابقة.", Toast.LENGTH_LONG).show()
+                return
+            }
+            if (response.authCode.isBlank()) {
                 val error = response.authErrorDescription ?: response.errorMsg ?: "تم إلغاء تسجيل الدخول أو رفض الإذن."
+                prefs.edit().remove("tiktok_code_verifier").remove("tiktok_oauth_state").apply()
                 runOnUiThread { Toast.makeText(this, "TikTok: $error", Toast.LENGTH_LONG).show() }
                 return
             }
@@ -168,7 +179,7 @@ class MainActivity : Activity() {
                 Toast.makeText(this, "انتهت بيانات التحقق الآمن. أعد ربط الحساب.", Toast.LENGTH_LONG).show()
                 return
             }
-            prefs.edit().remove("tiktok_code_verifier").apply()
+            prefs.edit().remove("tiktok_code_verifier").remove("tiktok_oauth_state").apply()
             exchangeTikTokAuthorizationCode(response.authCode, verifier)
         } catch (e: Exception) {
             Toast.makeText(this, "تعذر قراءة استجابة TikTok: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
