@@ -175,7 +175,7 @@ class MainActivity : Activity() {
             Toast.makeText(this, "لا يوجد فيديو لجدولته.", Toast.LENGTH_SHORT).show()
             return
         }
-        val workName = "mesut_tiktok_post_\${scheduledAtMillis}_\${System.currentTimeMillis()}"
+        val workName = "mesut_tiktok_post_${scheduledAtMillis}_${System.currentTimeMillis()}"
         val data = workDataOf(
             TikTokScheduledPublishWorker.KEY_WORK_NAME to workName,
             TikTokScheduledPublishWorker.KEY_VIDEO_URI to uri.toString(),
@@ -216,7 +216,7 @@ class MainActivity : Activity() {
         val labels = Array(items.length()) { index ->
             val item = items.optJSONObject(index) ?: JSONObject()
             val time = java.text.DateFormat.getDateTimeInstance().format(Date(item.optLong("scheduledAt")))
-            "\${time} — \${item.optString("status", "غير معروف")}: \${item.optString("caption", "").take(35)}"
+            "${time} — ${item.optString("status", "غير معروف")}: ${item.optString("caption", "").take(35)}"
         }
         android.app.AlertDialog.Builder(this)
             .setTitle("جدول النشر")
@@ -280,13 +280,13 @@ class MainActivity : Activity() {
                     comments += video.optLong("comment_count")
                     shares += video.optLong("share_count")
                     val title = video.optString("title").ifBlank { video.optString("video_description") }.ifBlank { "فيديو بدون عنوان" }
-                    details.append("\\n\\n").append(title.take(70))
-                        .append("\\nمشاهدات: ").append(video.optLong("view_count"))
+                    details.append("\n\n").append(title.take(70))
+                        .append("\nمشاهدات: ").append(video.optLong("view_count"))
                         .append(" | إعجابات: ").append(video.optLong("like_count"))
-                        .append("\\nتعليقات: ").append(video.optLong("comment_count"))
+                        .append("\nتعليقات: ").append(video.optLong("comment_count"))
                         .append(" | مشاركات: ").append(video.optLong("share_count"))
                 }
-                val summary = "آخر \${videos.length()} فيديوهات\\nإجمالي المشاهدات: $views\\nالإعجابات: $likes\\nالتعليقات: $comments\\nالمشاركات: $shares"
+                val summary = "آخر ${videos.length()} فيديوهات\nإجمالي المشاهدات: $views\nالإعجابات: $likes\nالتعليقات: $comments\nالمشاركات: $shares"
                 runOnUiThread {
                     android.app.AlertDialog.Builder(this)
                         .setTitle("تحليلات TikTok")
@@ -295,7 +295,7 @@ class MainActivity : Activity() {
                         .show()
                 }
             } catch (e: Exception) {
-                runOnUiThread { Toast.makeText(this, "تعذر جلب التحليلات: \${e.localizedMessage}", Toast.LENGTH_LONG).show() }
+                runOnUiThread { Toast.makeText(this, "تعذر جلب التحليلات: ${e.localizedMessage}", Toast.LENGTH_LONG).show() }
             }
         }.start()
     }
