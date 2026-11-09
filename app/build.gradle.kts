@@ -9,10 +9,10 @@ android {
 
     defaultConfig {
         applicationId = "com.mesut.tiktokmanager"
-        minSdk = 24
+        minSdk = 29
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = 2
+        versionName = "1.1.0"
     }
 
     buildTypes {
@@ -26,4 +26,9 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
     kotlinOptions { jvmTarget = "17" }
+}
+
+dependencies {
+    implementation("androidx.media3:media3-common:1.6.1")
+    implementation("androidx.media3:media3-transformer:1.6.1")
 }
