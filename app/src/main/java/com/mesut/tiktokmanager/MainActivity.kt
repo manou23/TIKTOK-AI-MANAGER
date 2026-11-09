@@ -15,6 +15,8 @@ import android.widget.*
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.effect.Presentation
+import androidx.media3.transformer.Effects
 import androidx.media3.transformer.Composition
 import androidx.media3.transformer.EditedMediaItem
 import androidx.media3.transformer.EditedMediaItemSequence
@@ -78,7 +80,7 @@ class MainActivity : Activity() {
         }
         page.addView(label("MESUT  •  TIKTOK AI MANAGER", 12, accent, true))
         page.addView(label("استوديو إنتاج الفيديو", 26, ink, true).apply { setPadding(0, dp(8), 0, dp(3)) })
-        page.addView(label("أنشئ فيديو عمودياً من صورك واحفظه بصيغة MP4", 14, muted, false))
+        page.addView(label("أنشئ فيديو عمودياً 9:16 من صورك واحفظه بصيغة MP4", 14, muted, false))
         val scroll = ScrollView(this)
         rootContent = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -206,7 +208,10 @@ class MainActivity : Activity() {
         try {
             val clips = imageUris.map { uri ->
                 val media = MediaItem.Builder().setUri(uri).setImageDurationMs(4_000).build()
-                EditedMediaItem.Builder(media).setFrameRate(30).build()
+                EditedMediaItem.Builder(media)
+                    .setFrameRate(30)
+                    .setEffects(Effects(emptyList(), listOf(Presentation.createForWidthAndHeight(1080, 1920, Presentation.LAYOUT_SCALE_TO_FIT_WITH_CROP))))
+                    .build()
             }
             val videoSequence = EditedMediaItemSequence.Builder(clips).build()
             val sequences = mutableListOf(videoSequence)
