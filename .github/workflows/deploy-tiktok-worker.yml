@@ -79,7 +79,7 @@ jobs:
         run: |
           set -euo pipefail
           if [ -z "$TIKTOK_WORKER_URL" ]; then
-            echo "::error::Missing GitHub Actions secret: TIKTOK_WORKER_URL"
-            exit 1
+            echo "::warning::Worker deployed. Add TIKTOK_WORKER_URL after reading the workers.dev URL in the deploy log, then run the Android APK workflow."
+            exit 0
           fi
           curl --fail --silent --show-error "${TIKTOK_WORKER_URL%/}/health"
