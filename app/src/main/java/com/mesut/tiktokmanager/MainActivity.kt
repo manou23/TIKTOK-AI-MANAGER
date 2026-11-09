@@ -41,6 +41,7 @@ import androidx.media3.transformer.ExportException
 import androidx.media3.transformer.ExportResult
 import androidx.media3.transformer.Transformer
 import org.json.JSONArray
+import org.json.JSONObject
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
@@ -103,6 +104,142 @@ class MainActivity : Activity() {
         imageUris.forEach { json.put(it.toString()) }
         prefs.edit().putString("images", json.toString())
             .putString("audio", audioUri?.toString()).putString("voiceover", voiceoverUri?.toString()).apply()
+    }
+
+
+    private fun savedProjectsFile() = File(filesDir, "mesut_saved_projects.json")
+
+    private fun readSavedProjects(): JSONArray {
+        val file = savedProjectsFile()
+        if (!file.exists()) return JSONArray()
+        return try { JSONArray(FileInputStream(file).bufferedReader().use { it.readText() }) }
+        catch (_: Exception) { JSONArray() }
+    }
+
+    private fun writeSavedProjects(projects: JSONArray) {
+        FileOutputStream(savedProjectsFile()).use { it.write(projects.toString().toByteArray(Charsets.UTF_8)) }
+    }
+
+    private fun showSaveProjectDialog() {
+        val nameInput = EditText(this).apply {
+            hint = "اسم المشروع"
+            setSingleLine(true)
+            setText(titleInput.text.toString().trim())
+            layoutDirection = View.LAYOUT_DIRECTION_RTL
+            setPadding(dp(14), dp(10), dp(14), dp(10))
+        }
+        android.app.AlertDialog.Builder(this)
+            .setTitle("حفظ المشروع الحالي")
+            .setMessage("سيتم حفظ الصور والنصوص والصوت وإعدادات التصدير على هاتفك.")
+            .setView(nameInput)
+            .setNegativeButton("إلغاء", null)
+            .setPositiveButton("حفظ") { _, _ ->
+                val name = nameInput.text.toString().trim()
+                if (name.isBlank()) {
+                    Toast.makeText(this, "اكتب اسماً للمشروع", Toast.LENGTH_SHORT).show()
+                    return@setPositiveButton
+                }
+                val projects = readSavedProjects()
+                val updated = JSONArray()
+                for (i in 0 until projects.length()) {
+                    val old = projects.optJSONObject(i) ?: continue
+                    if (!old.optString("name").equals(name, ignoreCase = true)) updated.put(old)
+                }
+                val imageArray = JSONArray().apply { imageUris.forEach { put(it.toString()) } }
+                val project = JSONObject()
+                    .put("name", name)
+                    .put("savedAt", System.currentTimeMillis())
+                    .put("images", imageArray)
+                    .put("title", titleInput.text.toString())
+                    .put("caption", captionInput.text.toString())
+                    .put("overlayText", overlayTextInput.text.toString())
+                    .put("narration", narrationInput.text.toString())
+                    .put("audioUri", audioUri?.toString() ?: JSONObject.NULL)
+                    .put("voiceoverUri", voiceoverUri?.toString() ?: JSONObject.NULL)
+                    .put("durationIndex", durationSpinner.selectedItemPosition)
+                    .put("qualityIndex", qualitySpinner.selectedItemPosition)
+                    .put("transitionIndex", transitionSpinner.selectedItemPosition)
+                    .put("textSizeIndex", textSizeSpinner.selectedItemPosition)
+                    .put("textPositionIndex", textPositionSpinner.selectedItemPosition)
+                    .put("musicVolume", musicVolumeSeek.progress)
+                    .put("voiceVolume", voiceVolumeSeek.progress)
+                updated.put(project)
+                writeSavedProjects(updated)
+                Toast.makeText(this, "تم حفظ المشروع: $name", Toast.LENGTH_LONG).show()
+            }
+            .show()
+    }
+
+    private fun showSavedProjectsDialog() {
+        val projects = readSavedProjects()
+        if (projects.length() == 0) {
+            Toast.makeText(this, "لا توجد مشاريع محفوظة بعد", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val names = Array(projects.length()) { i -> projects.optJSONObject(i)?.optString("name", "مشروع") ?: "مشروع" }
+        android.app.AlertDialog.Builder(this)
+            .setTitle("مشاريعي المحفوظة")
+            .setItems(names) { _, which ->
+                projects.optJSONObject(which)?.let { project ->
+                    android.app.AlertDialog.Builder(this)
+                        .setTitle(project.optString("name", "مشروع"))
+                        .setItems(arrayOf("فتح المشروع", "حذف المشروع")) { _, action ->
+                            if (action == 0) loadSavedProject(project) else deleteSavedProject(project.optString("name"))
+                        }
+                        .setNegativeButton("إلغاء", null)
+                        .show()
+                }
+            }
+            .setNegativeButton("إغلاق", null)
+            .show()
+    }
+
+    private fun loadSavedProject(project: JSONObject) {
+        imageUris.clear()
+        val images = project.optJSONArray("images") ?: JSONArray()
+        for (i in 0 until images.length()) {
+            val raw = images.optString(i)
+            try {
+                val uri = Uri.parse(raw)
+                contentResolver.openFileDescriptor(uri, "r")?.close()
+                imageUris.add(uri)
+            } catch (_: Exception) { }
+        }
+        titleInput.setText(project.optString("title"))
+        captionInput.setText(project.optString("caption"))
+        overlayTextInput.setText(project.optString("overlayText"))
+        narrationInput.setText(project.optString("narration"))
+        audioUri = project.optString("audioUri").takeIf { it.isNotBlank() && it != "null" }?.let { Uri.parse(it) }
+        voiceoverUri = project.optString("voiceoverUri").takeIf { it.isNotBlank() && it != "null" }?.let { Uri.parse(it) }
+        durationSpinner.setSelection(project.optInt("durationIndex", 1).coerceIn(0, 5))
+        qualitySpinner.setSelection(project.optInt("qualityIndex", 0).coerceIn(0, 1))
+        transitionSpinner.setSelection(project.optInt("transitionIndex", 0).coerceIn(0, 3))
+        textSizeSpinner.setSelection(project.optInt("textSizeIndex", 1).coerceIn(0, 2))
+        textPositionSpinner.setSelection(project.optInt("textPositionIndex", 2).coerceIn(0, 2))
+        musicVolumeSeek.progress = project.optInt("musicVolume", 35).coerceIn(0, 100)
+        voiceVolumeSeek.progress = project.optInt("voiceVolume", 100).coerceIn(0, 100)
+        musicVolumeLabel.text = "${musicVolumeSeek.progress}%"
+        voiceVolumeLabel.text = "${voiceVolumeSeek.progress}%"
+        saveDraft()
+        prefs.edit()
+            .putString("title", titleInput.text.toString())
+            .putString("caption", captionInput.text.toString())
+            .putString("overlay_text", overlayTextInput.text.toString())
+            .putString("narration_text", narrationInput.text.toString())
+            .apply()
+        refreshSelectionLabels()
+        Toast.makeText(this, "تم فتح المشروع: ${project.optString("name")}", Toast.LENGTH_LONG).show()
+    }
+
+    private fun deleteSavedProject(name: String) {
+        val projects = readSavedProjects()
+        val updated = JSONArray()
+        for (i in 0 until projects.length()) {
+            val project = projects.optJSONObject(i) ?: continue
+            if (project.optString("name") != name) updated.put(project)
+        }
+        writeSavedProjects(updated)
+        Toast.makeText(this, "تم حذف المشروع", Toast.LENGTH_SHORT).show()
     }
 
     private fun showStudio() {
@@ -316,6 +453,8 @@ class MainActivity : Activity() {
         statusInfo = label("جاهز لإنشاء فيديو جديد.", 14, muted, false).apply { setPadding(0, dp(12), 0, dp(8)) }
         rootContent.addView(statusInfo)
         exportButton = action("إنشاء فيديو MP4") { exportVideo() }
+        actionSecondary("حفظ المشروع الحالي") { showSaveProjectDialog() }
+        actionSecondary("مشاريعي المحفوظة") { showSavedProjectsDialog() }
         actionSecondary("مشاركة آخر فيديو") { shareLastVideo() }
         actionSecondary("فتح مجلد فيديوهات MESUT") { openVideoFolder() }
 
