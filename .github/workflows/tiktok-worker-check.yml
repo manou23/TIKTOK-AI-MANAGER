@@ -5,9 +5,11 @@ on:
     branches: [ main ]
     paths:
       - "server/tiktok-worker/**"
+      - ".github/workflows/tiktok-worker-check.yml"
   pull_request:
     paths:
       - "server/tiktok-worker/**"
+      - ".github/workflows/tiktok-worker-check.yml"
   workflow_dispatch:
 
 jobs:
