@@ -7,7 +7,7 @@
 
 <p align="center">
   <a href="https://github.com/manou23/TIKTOK-AI-MANAGER/actions/workflows/android.yml"><img src="https://github.com/manou23/TIKTOK-AI-MANAGER/actions/workflows/android.yml/badge.svg" alt="Android Build"></a>
-  <img src="https://img.shields.io/badge/Version-2.0.1-blue" alt="Version 2.0.0">
+  <img src="https://img.shields.io/badge/Version-2.0.2-blue" alt="Version 2.0.0">
   <img src="https://img.shields.io/badge/Platform-Android-green" alt="Android">
   <img src="https://img.shields.io/badge/Language-Kotlin-purple" alt="Kotlin">
   <img src="https://img.shields.io/badge/API-TikTok%20Official-000000" alt="TikTok Official API">
@@ -30,10 +30,10 @@
 
 | معلومات المشروع | التفاصيل |
 |---|---|
-| الإصدار الحالي | **2.0.1** |
+| الإصدار الحالي | **2.0.2** |
 | Android | 10 أو أحدث (minSdk 29) |
 | لغة التطبيق | Kotlin |
-| versionCode | 12 |
+| versionCode | 13 |
 | معرّف التطبيق | com.mesut.tiktokmanager |
 | الفرع الأساسي | main |
 
@@ -41,6 +41,7 @@
 
 ### 🎬 إنشاء الفيديو وتحريره
 - اختيار عدة صور وترتيب المشاهد وحذف الصور غير المطلوبة.
+- عرض صور مصغّرة للمشاهد ومعاينة كل مشهد والتنقل بين الصور قبل التصدير.
 - تحديد مدة المشهد من 3 إلى 10 ثوانٍ.
 - تصدير فيديو عمودي بدقة 720p أو 1080p وبمعدل 30 إطاراً في الثانية.
 - انتقالات تلاشي متداخلة مع التحكم في مدة الانتقال.
@@ -64,9 +65,11 @@
 - جدولة النشر على الهاتف باستخدام Android WorkManager مع إمكانية إلغاء المهام التي لم تبدأ.
 - عرض تحليلات أحدث 20 فيديو: المشاهدات والإعجابات والتعليقات والمشاركات، بحسب البيانات التي توفرها TikTok والصلاحيات الممنوحة.
 
-### 🧩 المنصات المستقبلية
-- أُضيف دليل تجهيز تكامل Instagram Business/Creator عبر Meta Graph API الرسمي.
-- **Instagram ليس ميزة نشر مفعّلة بعد**؛ ما زال يحتاج إلى تنفيذ OAuth وتخزين الوسائط وتكامل النشر واختبارات Meta. راجع [دليل Instagram](docs/INSTAGRAM_API_SETUP.md).
+### 📸 Instagram Reels
+- ربط حساب Instagram الاحترافي Business/Creator عبر Meta OAuth الرسمي.
+- رفع فيديو MP4 إلى Cloudflare R2، وإنشاء Reel ومتابعة جاهزية الحاوية ثم نشره عبر Meta Graph API.
+- فصل الحساب وإبقاء رموز Meta مشفرة داخل Worker/KV، لا داخل APK.
+- يتطلب الإعداد مفاتيح Meta وR2 وربط حساب Instagram بصفحة Facebook، ومراجعة Meta عند الحاجة. الميزة لا تعمل قبل إعداد الخادم والصلاحيات. راجع [دليل Instagram](docs/INSTAGRAM_API_SETUP.md).
 
 ## 📲 تحميل التطبيق
 
@@ -97,6 +100,7 @@
 | **1.7.0** | موثوقية التصدير | التحقق من سلامة ملف الفيديو بعد التصدير. |
 | **1.8.0** | ربط الحساب | TikTok Login Kit وPKCE وخادم آمن للرموز. |
 | **1.9.0** | النشر | الرفع المباشر ومتابعة حالة النشر عبر TikTok API. |
+| **2.0.2** | محرر المشاهد وInstagram Reels | صور مصغّرة ومعاينة للمشاهد، وربط Meta OAuth وتدفق رفع ونشر Reels عبر Worker وR2 بعد الإعداد. |
 | **2.0.1** | تحسين الأداء والموثوقية | رفع الفيديو بتدفق محدود الذاكرة، وتحسين إلغاء المهام المجدولة، وفحص حجم الفيديو قبل النشر. |
 | **2.0.0** | الإدارة والجدولة | جدولة النشر، إدارة المهام، ولوحة تحليلات الفيديو. |
 
@@ -106,6 +110,7 @@
 - هاتف Android 10 أو أحدث لتثبيت التطبيق.
 - حساب TikTok Developer وتطبيق مسجل لدى TikTok لتفعيل الربط والنشر.
 - Cloudflare Worker وKV لتشغيل خادم الربط الآمن.
+- لنشر Instagram: تطبيق Meta Developer وحساب احترافي مرتبط بصفحة Facebook، وCloudflare R2 مع نطاق HTTPS عام للوسائط.
 - صلاحيات TikTok المطلوبة وموافقة المنصة حيثما كانت مطلوبة.
 
 ### إعداد TikTok
@@ -121,6 +126,7 @@
 5. أنشئ الفيديو وانتظر انتهاء التصدير والفحص.
 6. احفظ المشروع إذا رغبت في تعديله لاحقاً.
 7. بعد إكمال إعداد TikTok، اربط الحساب واختر النشر أو الجدولة أو التحليلات.
+8. لاستخدام Instagram، أكمل إعداد Meta وR2 في [دليل Instagram](docs/INSTAGRAM_API_SETUP.md)، ثم اربط الحساب وانشر الفيديو كـ Reel.
 
 ## 🔐 الخصوصية والأمان
 
@@ -138,6 +144,8 @@
 - **Jetpack Media3** — معالجة وتصدير الفيديو.
 - **TikTok OpenSDK** — تسجيل الدخول الرسمي.
 - **TikTok Content Posting API** — الرفع والنشر.
+- **Meta Graph API** — Instagram OAuth ونشر Reels للحسابات الاحترافية.
+- **Cloudflare R2** — استضافة مؤقتة لوسائط Instagram التي تجلبها Meta عبر URL عام.
 - **Android WorkManager** — مهام الجدولة.
 - **Cloudflare Workers + KV** — خدمات الربط وحفظ الرموز المشفرة.
 - **GitHub Actions** — البناء والتحقق والنشر الآلي للخادم.
