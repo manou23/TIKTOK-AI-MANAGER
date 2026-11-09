@@ -94,6 +94,7 @@ class MainActivity : Activity() {
     private lateinit var musicVolumeLabel: TextView
     private lateinit var voiceVolumeLabel: TextView
     private var tiktokAccountInfo: TextView? = null
+    private var instagramAccountInfo: TextView? = null
     private var lastExportUri: Uri? = null
 
     companion object {
@@ -106,12 +107,14 @@ class MainActivity : Activity() {
         loadDraft()
         showStudio()
         handleTikTokAuthIntent(intent)
+        handleInstagramAuthIntent(intent)
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
         handleTikTokAuthIntent(intent)
+        handleInstagramAuthIntent(intent)
     }
 
     private fun loadDraft() {
@@ -644,6 +647,159 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun connectInstagramAccount() {
+        if (BuildConfig.TIKTOK_WORKER_URL.isBlank()) {
+            Toast.makeText(this, "خادم MESUT غير مضبوط في إعدادات البناء.", Toast.LENGTH_LONG).show()
+            return
+        }
+        try {
+            val startUrl = BuildConfig.TIKTOK_WORKER_URL.trimEnd('/') + "/instagram/oauth/start"
+            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(startUrl)))
+        } catch (e: Exception) {
+            Toast.makeText(this, "تعذر فتح تسجيل دخول Meta: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun handleInstagramAuthIntent(intent: Intent?) {
+        val data = intent?.data ?: return
+        if (data.scheme != "mesut" || data.host != "instagram" || data.path != "/callback") return
+        val error = data.getQueryParameter("error")
+        val code = data.getQueryParameter("code")
+        if (!error.isNullOrBlank()) {
+            val message = when (error) {
+                "no_professional_account" -> "لم نعثر على حساب Instagram احترافي مرتبط بصفحة Facebook."
+                "invalid_state" -> "فشل التحقق الأمني لتسجيل الدخول. حاول الربط من جديد."
+                "authorization_denied" -> "لم تمنح Meta الإذن المطلوب."
+                else -> "فشل ربط Instagram: $error"
+            }
+            Toast.makeText(this, message, Toast.LENGTH_LONG).show()
+            return
+        }
+        if (code.isNullOrBlank()) return
+        Thread {
+            try {
+                val result = callTikTokWorker("/instagram/session/exchange", null, JSONObject().put("code", code))
+                if (!result.optBoolean("ok")) throw IllegalStateException(result.optString("error", "فشل استلام جلسة Instagram"))
+                val token = result.getString("session_token")
+                prefs.edit().putString("instagram_session_token", token).apply()
+                val account = callTikTokWorker("/instagram/me", token, JSONObject()).optJSONObject("account")
+                val username = account?.optString("username").orEmpty()
+                runOnUiThread {
+                    instagramAccountInfo?.text = if (username.isNotBlank()) "متصل: @$username" else "تم ربط حساب Instagram."
+                    Toast.makeText(this, "تم ربط Instagram بنجاح.", Toast.LENGTH_LONG).show()
+                }
+            } catch (e: Exception) {
+                runOnUiThread { Toast.makeText(this, "فشل ربط Instagram: ${e.localizedMessage}", Toast.LENGTH_LONG).show() }
+            }
+        }.start()
+    }
+
+    private fun publishLastVideoToInstagram() {
+        val session = prefs.getString("instagram_session_token", null)
+        val uri = lastExportUri
+        if (session.isNullOrBlank()) {
+            Toast.makeText(this, "اربط حساب Instagram أولاً.", Toast.LENGTH_LONG).show()
+            return
+        }
+        if (uri == null) {
+            Toast.makeText(this, "أنشئ فيديو MP4 أولاً.", Toast.LENGTH_LONG).show()
+            return
+        }
+        android.app.AlertDialog.Builder(this)
+            .setTitle("نشر Reel على Instagram")
+            .setMessage("سيتم رفع آخر فيديو وإنشاء Reel ونشره على حساب Instagram المرتبط. هل تريد المتابعة؟")
+            .setNegativeButton("إلغاء", null)
+            .setPositiveButton("نشر الآن") { _, _ ->
+                statusInfo.text = "جارٍ رفع الفيديو إلى تخزين النشر الآمن..."
+                Thread {
+                    try {
+                        val descriptor = contentResolver.openAssetFileDescriptor(uri, "r")
+                            ?: throw IllegalStateException("تعذر فتح ملف الفيديو")
+                        val length = descriptor.use { it.length }
+                        if (length <= 0L) throw IllegalStateException("تعذر تحديد حجم الفيديو")
+                        val upload = (URL(BuildConfig.TIKTOK_WORKER_URL.trimEnd('/') + "/instagram/media/upload")
+                            .openConnection() as HttpURLConnection).apply {
+                            requestMethod = "PUT"
+                            connectTimeout = 30_000
+                            readTimeout = 120_000
+                            doOutput = true
+                            setFixedLengthStreamingMode(length)
+                            setRequestProperty("Content-Type", "video/mp4")
+                            setRequestProperty("Authorization", "Bearer $session")
+                        }
+                        val input = contentResolver.openInputStream(uri)
+                            ?: throw IllegalStateException("تعذر قراءة ملف الفيديو")
+                        input.use { source ->
+                            upload.outputStream.use { target ->
+                                val buffer = ByteArray(64 * 1024)
+                                while (true) {
+                                    val count = source.read(buffer)
+                                    if (count < 0) break
+                                    target.write(buffer, 0, count)
+                                }
+                            }
+                        }
+                        val uploadCode = upload.responseCode
+                        val uploadText = (if (uploadCode in 200..299) upload.inputStream else upload.errorStream)
+                            ?.bufferedReader()?.use { it.readText() }.orEmpty()
+                        upload.disconnect()
+                        if (uploadCode !in 200..299) {
+                            val error = if (uploadText.isBlank()) "HTTP $uploadCode" else JSONObject(uploadText).optString("error", "HTTP $uploadCode")
+                            throw IllegalStateException(error)
+                        }
+                        val uploaded = JSONObject(uploadText)
+                        if (!uploaded.optBoolean("ok")) throw IllegalStateException(uploaded.optString("error", "فشل رفع الفيديو"))
+                        val mediaKey = uploaded.getString("media_key")
+                        val caption = captionInput.text.toString().trim().take(2200)
+                        val container = callTikTokWorker("/instagram/publish/container", session,
+                            JSONObject().put("media_key", mediaKey).put("caption", caption))
+                        if (!container.optBoolean("ok")) throw IllegalStateException(container.optString("error", "فشل تجهيز Reel"))
+                        val creationId = container.getString("creation_id")
+                        var statusCode = ""
+                        repeat(60) {
+                            Thread.sleep(3_000L)
+                            val status = callTikTokWorker("/instagram/publish/status", session,
+                                JSONObject().put("creation_id", creationId))
+                            statusCode = status.optString("status_code")
+                            if (statusCode == "FINISHED") return@repeat
+                            if (statusCode == "ERROR" || statusCode == "EXPIRED") {
+                                throw IllegalStateException(status.optString("status", "فشلت معالجة فيديو Instagram"))
+                            }
+                        }
+                        if (statusCode != "FINISHED") throw IllegalStateException("استغرق Instagram وقتاً أطول من المتوقع. لم يتم نشر الفيديو؛ حاول متابعة العملية لاحقاً.")
+                        val published = callTikTokWorker("/instagram/publish/finalize", session,
+                            JSONObject().put("creation_id", creationId).put("media_key", mediaKey))
+                        if (!published.optBoolean("ok")) throw IllegalStateException(published.optString("error", "تعذر إتمام النشر"))
+                        runOnUiThread {
+                            statusInfo.text = "تم نشر Reel على Instagram بنجاح. رقم المنشور: ${published.optString("media_id")}"
+                            Toast.makeText(this, "تم نشر الفيديو على Instagram.", Toast.LENGTH_LONG).show()
+                        }
+                    } catch (e: Exception) {
+                        runOnUiThread {
+                            statusInfo.text = "تعذر نشر Instagram: ${e.localizedMessage}"
+                            Toast.makeText(this, "فشل النشر: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
+                        }
+                    }
+                }.start()
+            }.show()
+    }
+
+    private fun disconnectInstagramAccount() {
+        val token = prefs.getString("instagram_session_token", null)
+        if (token.isNullOrBlank()) {
+            instagramAccountInfo?.text = "لم يتم ربط حساب Instagram."
+            return
+        }
+        Thread {
+            try { callTikTokWorker("/instagram/disconnect", token, JSONObject()) } catch (_: Exception) { }
+            prefs.edit().remove("instagram_session_token").apply()
+            runOnUiThread {
+                instagramAccountInfo?.text = "تم فصل حساب Instagram."
+                Toast.makeText(this, "تم فصل حساب Instagram من التطبيق.", Toast.LENGTH_SHORT).show()
+            }
+        }.start()
+    }
+
     private fun saveTikTokSessionToken(token: String) = TikTokSessionStore.save(this, token)
 
     private fun readTikTokSessionToken(): String? = TikTokSessionStore.read(this)
@@ -1027,6 +1183,17 @@ class MainActivity : Activity() {
         actionSecondary("تحليلات TikTok") { showTikTokAnalytics() }
         actionSecondary("متابعة آخر عملية نشر") { checkLastTikTokPublishStatus() }
         actionSecondary("فصل حساب TikTok") { disconnectTikTokAccount() }
+
+        section("حساب Instagram")
+        instagramAccountInfo = label(
+            if (prefs.getString("instagram_session_token", null) != null) "يوجد حساب Instagram مربوط بهذا التطبيق."
+            else "لم يتم ربط حساب Instagram بعد.",
+            13, muted, false
+        )
+        rootContent.addView(instagramAccountInfo)
+        actionSecondary("ربط حساب Instagram رسمياً") { connectInstagramAccount() }
+        actionSecondary("نشر آخر فيديو كـ Reel على Instagram") { publishLastVideoToInstagram() }
+        actionSecondary("فصل حساب Instagram") { disconnectInstagramAccount() }
 
         section("ملاحظة النشر")
         cardText("يمكنك مشاركة الفيديو داخل TikTok أو استخدام النشر المباشر والجدولة بعد ربط الحساب وتفعيل صلاحيات TikTok الرسمية. سيطلب التطبيق تأكيدك قبل كل عملية نشر.")
