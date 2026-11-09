@@ -216,7 +216,7 @@ class MainActivity : Activity() {
         val labels = Array(items.length()) { index ->
             val item = items.optJSONObject(index) ?: JSONObject()
             val time = java.text.DateFormat.getDateTimeInstance().format(Date(item.optLong("scheduledAt")))
-            "${time} — ${item.optString("status", "غير معروف")}: ${item.optString("caption", "").take(35)}"
+            time + " — " + item.optString("status", "غير معروف") + ": " + item.optString("caption", "").take(35)
         }
         android.app.AlertDialog.Builder(this)
             .setTitle("جدول النشر")
