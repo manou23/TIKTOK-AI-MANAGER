@@ -479,13 +479,6 @@ class MainActivity : Activity() {
             val totalChunks = ((totalSize + chunkSize - 1L) / chunkSize).toInt()
             for (chunkIndex in 0 until totalChunks) {
                 val length = if (chunkIndex == totalChunks - 1) (totalSize - start).toInt() else chunkSize
-                val bytes = ByteArray(length)
-                var offset = 0
-                while (offset < length) {
-                    val count = input.read(bytes, offset, length - offset)
-                    if (count < 0) throw IllegalStateException("انتهى ملف الفيديو قبل اكتمال الرفع")
-                    offset += count
-                }
                 val end = start + length - 1
                 val connection = (URL(uploadUrl).openConnection() as HttpURLConnection).apply {
                     requestMethod = "PUT"
@@ -497,7 +490,16 @@ class MainActivity : Activity() {
                     setRequestProperty("Content-Range", "bytes $start-$end/$totalSize")
                 }
                 try {
-                    connection.outputStream.use { it.write(bytes) }
+                    connection.outputStream.use { output ->
+                        val buffer = ByteArray(64 * 1024)
+                        var remaining = length
+                        while (remaining > 0) {
+                            val count = input.read(buffer, 0, minOf(buffer.size, remaining))
+                            if (count < 0) throw IllegalStateException("انتهى ملف الفيديو قبل اكتمال الرفع")
+                            output.write(buffer, 0, count)
+                            remaining -= count
+                        }
+                    }
                     val responseCode = connection.responseCode
                     if (responseCode !in 200..299) {
                         val error = connection.errorStream?.bufferedReader()?.use { it.readText() }.orEmpty()
