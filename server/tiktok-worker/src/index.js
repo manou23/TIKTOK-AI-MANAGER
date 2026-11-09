@@ -1,3 +1,5 @@
+import { handleInstagramRequest } from "./instagram.js";
+
 const JSON_HEADERS = { "content-type": "application/json; charset=utf-8" };
 const SESSION_TTL = 60 * 60 * 24 * 365;
 const FIVE_MB = 5 * 1024 * 1024;
@@ -125,6 +127,8 @@ export default {
     }
     const url = new URL(request.url);
     try {
+      const instagramResponse = await handleInstagramRequest(request, env, url);
+      if (instagramResponse) return instagramResponse;
       if (request.method === "GET" && url.pathname === "/health") return response({ ok: true, service: "MESUT TikTok API", version: "1.0.0" });
 
       if (request.method === "POST" && url.pathname === "/oauth/exchange") {
