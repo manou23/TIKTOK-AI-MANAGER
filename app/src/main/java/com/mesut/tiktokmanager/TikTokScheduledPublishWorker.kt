@@ -5,8 +5,11 @@ import android.content.Context
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
@@ -38,6 +41,7 @@ class TikTokScheduledPublishWorker(
             source.use { input -> FileOutputStream(workingFile).use { output -> input.copyTo(output) } }
             val videoSize = workingFile.length()
             if (videoSize <= 0L) throw IllegalStateException("ملف الفيديو المجدول فارغ")
+            if (videoSize > 4L * 1024L * 1024L * 1024L) throw IllegalStateException("حجم الفيديو يتجاوز الحد الأقصى المسموح به للنشر")
 
             val minChunk = 5L * 1024L * 1024L
             val tenMb = 10L * 1024L * 1024L
@@ -74,6 +78,9 @@ class TikTokScheduledPublishWorker(
             val displayStatus = if (status == "PUBLISH_COMPLETE") "تم النشر بنجاح" else "تم الرفع — حالة TikTok: $status"
             updateScheduleRecord(applicationContext, workName, displayStatus, publishId)
             Result.success(workDataOf("publish_id" to publishId, "status" to status))
+        } catch (cancelled: CancellationException) {
+            updateScheduleRecord(applicationContext, workName, "أُلغيت الجدولة")
+            throw cancelled
         } catch (error: Exception) {
             val message = error.localizedMessage ?: "خطأ غير معروف"
             updateScheduleRecord(applicationContext, workName, "فشل: $message")
@@ -107,20 +114,14 @@ class TikTokScheduledPublishWorker(
         }
     }
 
-    private fun uploadChunks(file: File, uploadUrl: String, chunkSize: Int) {
+    private suspend fun uploadChunks(file: File, uploadUrl: String, chunkSize: Int) {
         val totalSize = file.length()
         FileInputStream(file).use { input ->
             var start = 0L
             val count = ((totalSize + chunkSize - 1L) / chunkSize).toInt()
             for (index in 0 until count) {
+                currentCoroutineContext().ensureActive()
                 val length = if (index == count - 1) (totalSize - start).toInt() else chunkSize
-                val bytes = ByteArray(length)
-                var offset = 0
-                while (offset < length) {
-                    val read = input.read(bytes, offset, length - offset)
-                    if (read < 0) throw IllegalStateException("انتهى ملف الفيديو قبل اكتمال الرفع")
-                    offset += read
-                }
                 val end = start + length - 1
                 val connection = (URL(uploadUrl).openConnection() as HttpURLConnection).apply {
                     requestMethod = "PUT"
@@ -132,7 +133,17 @@ class TikTokScheduledPublishWorker(
                     setRequestProperty("Content-Range", "bytes $start-$end/$totalSize")
                 }
                 try {
-                    connection.outputStream.use { it.write(bytes) }
+                    connection.outputStream.use { output ->
+                        val buffer = ByteArray(64 * 1024)
+                        var remaining = length
+                        while (remaining > 0) {
+                            currentCoroutineContext().ensureActive()
+                            val read = input.read(buffer, 0, minOf(buffer.size, remaining))
+                            if (read < 0) throw IllegalStateException("انتهى ملف الفيديو قبل اكتمال الرفع")
+                            output.write(buffer, 0, read)
+                            remaining -= read
+                        }
+                    }
                     val code = connection.responseCode
                     if (code !in 200..299) throw IllegalStateException("فشل رفع الفيديو إلى TikTok (HTTP $code)")
                 } finally {
