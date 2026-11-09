@@ -21,6 +21,8 @@ import android.view.Gravity
 import android.view.View
 import android.widget.*
 import androidx.media3.common.MediaItem
+import androidx.media3.common.C
+import androidx.media3.common.audio.GainProcessor
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.effect.Presentation
@@ -62,6 +64,10 @@ class MainActivity : Activity() {
     private lateinit var qualitySpinner: Spinner
     private lateinit var textSizeSpinner: Spinner
     private lateinit var textPositionSpinner: Spinner
+    private lateinit var musicVolumeSeek: SeekBar
+    private lateinit var voiceVolumeSeek: SeekBar
+    private lateinit var musicVolumeLabel: TextView
+    private lateinit var voiceVolumeLabel: TextView
     private var lastExportUri: Uri? = null
 
     companion object {
@@ -223,6 +229,40 @@ class MainActivity : Activity() {
             saveDraft()
             refreshSelectionLabels()
         }
+        rootContent.addView(label("مستوى صوت الموسيقى الخلفية", 13, muted, true))
+        musicVolumeLabel = label("", 12, muted, false)
+        rootContent.addView(musicVolumeLabel)
+        musicVolumeSeek = SeekBar(this).apply {
+            max = 100
+            progress = prefs.getInt("music_volume", 35).coerceIn(0, 100)
+            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                    musicVolumeLabel.text = "${progress}%"
+                    if (fromUser) prefs.edit().putInt("music_volume", progress).apply()
+                }
+                override fun onStartTrackingTouch(seekBar: SeekBar?) {}
+                override fun onStopTrackingTouch(seekBar: SeekBar?) {}
+            })
+        }
+        rootContent.addView(musicVolumeSeek, matchBottom())
+        rootContent.addView(label("مستوى صوت التعليق الصوتي", 13, muted, true))
+        voiceVolumeLabel = label("", 12, muted, false)
+        rootContent.addView(voiceVolumeLabel)
+        voiceVolumeSeek = SeekBar(this).apply {
+            max = 100
+            progress = prefs.getInt("voice_volume", 100).coerceIn(0, 100)
+            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                    voiceVolumeLabel.text = "${progress}%"
+                    if (fromUser) prefs.edit().putInt("voice_volume", progress).apply()
+                }
+                override fun onStartTrackingTouch(seekBar: SeekBar?) {}
+                override fun onStopTrackingTouch(seekBar: SeekBar?) {}
+            })
+        }
+        rootContent.addView(voiceVolumeSeek, matchBottom())
+        musicVolumeLabel.text = "${musicVolumeSeek.progress}%"
+        voiceVolumeLabel.text = "${voiceVolumeSeek.progress}%"
 
         section("4. إعدادات التحرير")
         rootContent.addView(label("مدة كل مشهد", 13, muted, true))
@@ -352,11 +392,15 @@ class MainActivity : Activity() {
             val videoSequence = EditedMediaItemSequence.Builder(clips).build()
             val sequences = mutableListOf(videoSequence)
             audioUri?.let { uri ->
-                val musicItem = EditedMediaItem.Builder(MediaItem.fromUri(uri)).build()
+                val musicItem = EditedMediaItem.Builder(MediaItem.fromUri(uri))
+                    .setEffects(volumeEffects(musicVolumeSeek.progress), emptyList())
+                    .build()
                 sequences.add(EditedMediaItemSequence.Builder(musicItem).setIsLooping(true).build())
             }
             voiceoverUri?.let { uri ->
-                val voiceItem = EditedMediaItem.Builder(MediaItem.fromUri(uri)).build()
+                val voiceItem = EditedMediaItem.Builder(MediaItem.fromUri(uri))
+                    .setEffects(volumeEffects(voiceVolumeSeek.progress), emptyList())
+                    .build()
                 sequences.add(EditedMediaItemSequence.Builder(voiceItem).build())
             }
             val composition = Composition.Builder(sequences).build()
@@ -392,6 +436,15 @@ class MainActivity : Activity() {
         }
     }
 
+
+
+    private fun volumeEffects(percent: Int): List<androidx.media3.common.audio.AudioProcessor> {
+        val gain = percent.coerceIn(0, 100) / 100f
+        return listOf(GainProcessor(object : GainProcessor.GainProvider {
+            override fun getGainFactorAtSamplePosition(samplePosition: Long, sampleRate: Int): Float = gain
+            override fun isUnityUntil(samplePosition: Long, sampleRate: Int): Long = C.TIME_END_OF_SOURCE
+        }))
+    }
 
     private fun generateArabicVoiceover() {
         val spokenText = narrationInput.text.toString().trim()
