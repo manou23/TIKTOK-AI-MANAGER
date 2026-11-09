@@ -35,6 +35,22 @@ test("Instagram OAuth start fails closed when Meta secrets are not configured", 
   assert.match((await response.json()).error, /META_APP_ID/);
 });
 
+test("Meta callback sends the app a custom-scheme redirect without Response.redirect restrictions", async () => {
+  const response = await handleInstagramRequest(
+    new Request("https://worker.example/instagram/oauth/callback?state=unknown&code=ignored", { method: "GET" }),
+    {
+      TOKENS: { get: async () => null },
+      META_APP_ID: "test-app",
+      META_APP_SECRET: "test-secret",
+      META_REDIRECT_URI: "https://worker.example/instagram/oauth/callback",
+      TOKEN_ENCRYPTION_KEY: "0".repeat(64)
+    },
+    new URL("https://worker.example/instagram/oauth/callback?state=unknown&code=ignored")
+  );
+  assert.equal(response.status, 302);
+  assert.equal(response.headers.get("location"), "mesut://instagram/callback?error=invalid_state");
+});
+
 test("Instagram protected endpoints require a bearer session", async () => {
   const response = await handleInstagramRequest(
     new Request("https://worker.example/instagram/me", { method: "POST" }),
