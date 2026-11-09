@@ -40,8 +40,13 @@ class TikTokScheduledPublishWorker(
             if (videoSize <= 0L) throw IllegalStateException("ملف الفيديو المجدول فارغ")
 
             val minChunk = 5L * 1024L * 1024L
-            val chunkSize = if (videoSize < minChunk) videoSize.toInt() else 10 * 1024 * 1024
-            val totalChunks = maxOf(1, (videoSize / chunkSize).toInt())
+            val tenMb = 10L * 1024L * 1024L
+            val chunkSize = when {
+                videoSize < minChunk -> videoSize.toInt()
+                videoSize < tenMb -> minChunk.toInt()
+                else -> tenMb.toInt()
+            }
+            val totalChunks = ((videoSize + chunkSize - 1L) / chunkSize).toInt()
             val payload = JSONObject()
                 .put("title", inputData.getString(KEY_CAPTION).orEmpty().take(2200))
                 .put("privacy_level", inputData.getString(KEY_PRIVACY) ?: "SELF_ONLY")
@@ -106,7 +111,7 @@ class TikTokScheduledPublishWorker(
         val totalSize = file.length()
         FileInputStream(file).use { input ->
             var start = 0L
-            val count = maxOf(1, (totalSize / chunkSize).toInt())
+            val count = ((totalSize + chunkSize - 1L) / chunkSize).toInt()
             for (index in 0 until count) {
                 val length = if (index == count - 1) (totalSize - start).toInt() else chunkSize
                 val bytes = ByteArray(length)
