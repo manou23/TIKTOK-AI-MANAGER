@@ -63,6 +63,17 @@ The Meta permissions requested by the Facebook Login flow are `pages_show_list`,
 
 ## 4. Deploy
 
+The GitHub Actions workflow `.github/workflows/deploy-tiktok-worker.yml` can also configure Instagram during deployment. To enable it, add these repository Actions secrets together:
+
+- `META_APP_ID`
+- `META_APP_SECRET`
+- `META_REDIRECT_URI`
+- `MEDIA_PUBLIC_BASE_URL`
+- `INSTAGRAM_R2_BUCKET_NAME`
+
+Optionally add `META_GRAPH_API_VERSION` (defaults to `v26.0`). The workflow creates the R2 bucket if it does not exist, adds the `MEDIA_BUCKET` binding for that deployment, and uploads the Meta settings to Worker secrets. The Cloudflare API token must have Workers, KV, and R2 permissions. You must still attach an HTTPS custom domain to the R2 bucket and use that exact origin in `MEDIA_PUBLIC_BASE_URL`. If the five required Instagram secrets are absent, deployment remains TikTok-only; if only some are configured, the workflow stops with an explanatory error.
+
+
 ```bash
 npm install
 npm run deploy
