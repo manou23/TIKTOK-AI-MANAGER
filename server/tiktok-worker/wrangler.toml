@@ -1,0 +1,8 @@
+name = "mesut-tiktok-api"
+main = "src/index.js"
+compatibility_date = "2026-11-09"
+workers_dev = true
+
+[[kv_namespaces]]
+binding = "TOKENS"
+id = "REPLACE_WITH_YOUR_CLOUDFLARE_KV_NAMESPACE_ID"
