@@ -1,0 +1,24 @@
+name: TikTok Worker Check
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - "server/tiktok-worker/**"
+  pull_request:
+    paths:
+      - "server/tiktok-worker/**"
+  workflow_dispatch:
+
+jobs:
+  syntax-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Check Worker JavaScript syntax
+        run: node --check server/tiktok-worker/src/index.js
