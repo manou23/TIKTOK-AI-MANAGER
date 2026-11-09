@@ -661,7 +661,7 @@ class MainActivity : Activity() {
     }
 
     private fun bottomNav() = TextView(this).apply {
-        text = "MESUT TikTok AI Manager  •  الإصدار 1.3.0"
+        text = "MESUT TikTok AI Manager  •  الإصدار 1.4.0"
         textSize = 11f
         gravity = Gravity.CENTER
         setTextColor(muted)
