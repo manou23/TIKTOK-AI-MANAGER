@@ -11,6 +11,7 @@ import android.text.SpannableString
 import android.text.Spanned
 import android.text.style.ForegroundColorSpan
 import android.text.style.BackgroundColorSpan
+import android.text.style.RelativeSizeSpan
 import android.net.Uri
 import android.os.Bundle
 import android.speech.tts.TextToSpeech
@@ -59,6 +60,8 @@ class MainActivity : Activity() {
     private lateinit var sceneListContainer: LinearLayout
     private lateinit var durationSpinner: Spinner
     private lateinit var qualitySpinner: Spinner
+    private lateinit var textSizeSpinner: Spinner
+    private lateinit var textPositionSpinner: Spinner
     private var lastExportUri: Uri? = null
 
     companion object {
@@ -147,6 +150,32 @@ class MainActivity : Activity() {
             layoutDirection = View.LAYOUT_DIRECTION_RTL
         }
         rootContent.addView(overlayTextInput, matchBottom())
+        rootContent.addView(label("حجم النص داخل الفيديو", 13, muted, true))
+        textSizeSpinner = Spinner(this).apply {
+            adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item,
+                listOf("صغير", "متوسط", "كبير"))
+            setSelection(prefs.getInt("overlay_size", 1).coerceIn(0, 2))
+            onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
+                override fun onNothingSelected(parent: android.widget.AdapterView<*>?) {}
+                override fun onItemSelected(parent: android.widget.AdapterView<*>?, view: View?, position: Int, id: Long) {
+                    prefs.edit().putInt("overlay_size", position).apply()
+                }
+            }
+        }
+        rootContent.addView(textSizeSpinner, matchBottom())
+        rootContent.addView(label("موضع النص", 13, muted, true))
+        textPositionSpinner = Spinner(this).apply {
+            adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item,
+                listOf("أعلى الفيديو", "وسط الفيديو", "أسفل الفيديو"))
+            setSelection(prefs.getInt("overlay_position", 2).coerceIn(0, 2))
+            onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
+                override fun onNothingSelected(parent: android.widget.AdapterView<*>?) {}
+                override fun onItemSelected(parent: android.widget.AdapterView<*>?, view: View?, position: Int, id: Long) {
+                    prefs.edit().putInt("overlay_position", position).apply()
+                }
+            }
+        }
+        rootContent.addView(textPositionSpinner, matchBottom())
 
         section("2. الصور والمشاهد")
         imageInfo = label(imageSummary(), 13, muted, false)
@@ -302,11 +331,14 @@ class MainActivity : Activity() {
             val overlayText = overlayTextInput.text.toString().trim()
             if (overlayText.isNotEmpty()) {
                 val styledText = SpannableString(overlayText)
+                val sizeScale = listOf(0.82f, 1.0f, 1.28f)[prefs.getInt("overlay_size", 1).coerceIn(0, 2)]
+                styledText.setSpan(RelativeSizeSpan(sizeScale), 0, styledText.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
                 styledText.setSpan(ForegroundColorSpan(Color.WHITE), 0, styledText.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
                 styledText.setSpan(BackgroundColorSpan(Color.argb(190, 15, 20, 30)), 0, styledText.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                val anchorY = listOf(-0.78f, 0f, 0.78f)[prefs.getInt("overlay_position", 2).coerceIn(0, 2)]
                 val settings = StaticOverlaySettings.Builder()
-                    .setOverlayFrameAnchor(0f, 0f)
-                    .setBackgroundFrameAnchor(0f, -0.72f)
+                    .setOverlayFrameAnchor(0f, anchorY)
+                    .setBackgroundFrameAnchor(0f, anchorY)
                     .build()
                 videoEffects.add(OverlayEffect(listOf(TextOverlay.createStaticTextOverlay(styledText, settings))))
             }
