@@ -184,7 +184,7 @@ export default {
       if (request.method === "POST" && url.pathname === "/publish/init") {
         const session = await requireSession(request, env);
         const input = await request.json();
-        if (!input.title || !input.privacy_level || !Number.isSafeInteger(input.video_size) || input.video_size <= 0 || input.video_size > 4 * 1024 * 1024 * 1024 ||
+        if (typeof input.title !== "string" || input.title.length > 2200 || !input.privacy_level || !Number.isSafeInteger(input.video_size) || input.video_size <= 0 || input.video_size > 4 * 1024 * 1024 * 1024 ||
             !Number.isSafeInteger(input.chunk_size) || input.chunk_size <= 0 || input.chunk_size > 64 * 1024 * 1024 ||
             !Number.isSafeInteger(input.total_chunk_count) || input.total_chunk_count <= 0 || input.total_chunk_count > 1000) {
           return response({ ok: false, error: "Invalid title, privacy, or upload chunk metadata" }, 400);
