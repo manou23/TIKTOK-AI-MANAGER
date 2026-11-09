@@ -14,7 +14,7 @@ This document tracks upstream projects reviewed while developing MESUT TikTok AI
 - Repository: https://github.com/johncreson/CheapShot-Editor
 - License: MIT
 - Useful areas: export verification and diagnostics, project persistence/migrations, batch export planning, audio processing, caption/subtitle utilities, and robust recovery from failed exports.
-- Planned use: use its architecture and selectively reuse compatible MIT-licensed components with attribution. Do not import its full editor architecture into this lightweight creator app.
+- Applied inspiration: MESUT now has named local project persistence and MP4 integrity checks. These are original implementations inspired by the same engineering problems; no CheapShot source files were copied.
 
 ## References that require restrictions
 
@@ -34,7 +34,7 @@ This document tracks upstream projects reviewed while developing MESUT TikTok AI
 - Repository: https://github.com/IvanBBaev/tiktok-mcp
 - License: MIT
 - Useful areas: OAuth 2.0/PKCE handling, Content Posting API requests, chunked upload, publish-status polling, multi-account token handling, and plan-before-execute safeguards.
-- Planned use: borrow the safe publishing workflow concepts and selectively reuse MIT-compatible server-side utilities with attribution. The app will still call TikTok's official APIs; this community project is not an official TikTok SDK.
+- Applied inspiration: explicit user confirmation before publishing, server-side token handling, chunked upload, and status polling. MESUT calls TikTok's official APIs; no tiktok-mcp source files were copied, and this community project is not an official TikTok SDK.
 
 ## TikTok publishing integration
 
