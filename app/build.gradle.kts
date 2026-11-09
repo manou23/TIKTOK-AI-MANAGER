@@ -43,4 +43,5 @@ dependencies {
     implementation("androidx.media3:media3-transformer:1.9.0")
     implementation("com.tiktok.open.sdk:tiktok-open-sdk-core:2.2.0")
     implementation("com.tiktok.open.sdk:tiktok-open-sdk-auth:2.2.0")
+    implementation("androidx.work:work-runtime-ktx:2.12.0")
 }
