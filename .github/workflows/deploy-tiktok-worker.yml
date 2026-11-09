@@ -85,7 +85,6 @@ jobs:
         run: npm install
 
       - name: Create Instagram R2 bucket when configured
-        if: env.INSTAGRAM_ENABLED == 'true'
         working-directory: server/tiktok-worker
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -93,8 +92,10 @@ jobs:
           INSTAGRAM_R2_BUCKET_NAME: ${{ secrets.INSTAGRAM_R2_BUCKET_NAME }}
         run: |
           set -euo pipefail
-          if ! npx wrangler r2 bucket list | grep -Fq "$INSTAGRAM_R2_BUCKET_NAME"; then
-            npx wrangler r2 bucket create "$INSTAGRAM_R2_BUCKET_NAME"
+          if [ "${INSTAGRAM_ENABLED:-false}" = "true" ]; then
+            if ! npx wrangler r2 bucket list | grep -Fq "$INSTAGRAM_R2_BUCKET_NAME"; then
+              npx wrangler r2 bucket create "$INSTAGRAM_R2_BUCKET_NAME"
+            fi
           fi
 
       - name: Upload encrypted runtime secrets to Cloudflare
