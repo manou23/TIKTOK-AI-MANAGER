@@ -54,12 +54,7 @@ import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
-import java.security.KeyStore
 import java.security.SecureRandom
-import javax.crypto.Cipher
-import javax.crypto.KeyGenerator
-import javax.crypto.SecretKey
-import javax.crypto.spec.GCMParameterSpec
 
 @UnstableApi
 class MainActivity : Activity() {
@@ -459,53 +454,21 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun getTikTokSessionKey(): SecretKey {
-        val alias = "mesut_tiktok_session_key"
-        val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
-        val existing = store.getKey(alias, null) as? SecretKey
-        if (existing != null) return existing
-        val generator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore")
-        generator.init(
-            KeyGenParameterSpec.Builder(alias, KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT)
-                .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
-                .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
-                .setRandomizedEncryptionRequired(true)
-                .build()
-        )
-        return generator.generateKey()
-    }
+    private fun saveTikTokSessionToken(token: String) = TikTokSessionStore.save(this, token)
 
-    private fun saveTikTokSessionToken(token: String) {
-        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-        cipher.init(Cipher.ENCRYPT_MODE, getTikTokSessionKey())
-        val encrypted = cipher.doFinal(token.toByteArray(Charsets.UTF_8))
-        val combined = cipher.iv + encrypted
-        prefs.edit().putString("tiktok_session_encrypted", Base64.encodeToString(combined, Base64.NO_WRAP)).apply()
-    }
-
-    private fun readTikTokSessionToken(): String? {
-        val encoded = prefs.getString("tiktok_session_encrypted", null) ?: return null
-        return try {
-            val combined = Base64.decode(encoded, Base64.NO_WRAP)
-            if (combined.size <= 12) return null
-            val iv = combined.copyOfRange(0, 12)
-            val encrypted = combined.copyOfRange(12, combined.size)
-            val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-            cipher.init(Cipher.DECRYPT_MODE, getTikTokSessionKey(), GCMParameterSpec(128, iv))
-            String(cipher.doFinal(encrypted), Charsets.UTF_8)
-        } catch (_: Exception) { null }
-    }
-
+    private fun readTikTokSessionToken(): String? = TikTokSessionStore.read(this)
     private fun disconnectTikTokAccount() {
         val token = readTikTokSessionToken()
         if (token.isNullOrBlank()) {
-            prefs.edit().remove("tiktok_session_encrypted").remove("tiktok_granted_scopes").apply()
+            TikTokSessionStore.clear(this)
+            prefs.edit().remove("tiktok_granted_scopes").apply()
             tiktokAccountInfo?.text = "لم يتم ربط حساب TikTok."
             return
         }
         Thread {
             try { callTikTokWorker("/oauth/disconnect", token, JSONObject()) } catch (_: Exception) { }
-            prefs.edit().remove("tiktok_session_encrypted").apply()
+            TikTokSessionStore.clear(this)
+            prefs.edit().remove("tiktok_granted_scopes").apply()
             runOnUiThread {
                 tiktokAccountInfo?.text = "تم فصل حساب TikTok."
                 Toast.makeText(this, "تم فصل الحساب من التطبيق.", Toast.LENGTH_SHORT).show()
