@@ -128,6 +128,7 @@ class MainActivity : Activity() {
             layoutDirection = View.LAYOUT_DIRECTION_RTL
         }
         rootContent.addView(sceneListContainer)
+        renderSceneList()
         action("＋  اختيار صور من الهاتف") { pickImages() }
         actionSecondary("مسح الصور المختارة") {
             imageUris.clear()
