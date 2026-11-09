@@ -756,12 +756,12 @@ class MainActivity : Activity() {
                         if (!container.optBoolean("ok")) throw IllegalStateException(container.optString("error", "فشل تجهيز Reel"))
                         val creationId = container.getString("creation_id")
                         var statusCode = ""
-                        repeat(60) {
+                        for (attempt in 0 until 60) {
                             Thread.sleep(3_000L)
                             val status = callTikTokWorker("/instagram/publish/status", session,
                                 JSONObject().put("creation_id", creationId))
                             statusCode = status.optString("status_code")
-                            if (statusCode == "FINISHED") return@repeat
+                            if (statusCode == "FINISHED") break
                             if (statusCode == "ERROR" || statusCode == "EXPIRED") {
                                 throw IllegalStateException(status.optString("status", "فشلت معالجة فيديو Instagram"))
                             }
