@@ -24,7 +24,7 @@
    ```
 3. انسخ معرّف namespace الذي يعيده Cloudflare.
 4. أنشئ Cloudflare API Token بصلاحيات Workers Scripts: Edit وWorkers KV Storage: Edit، مع تقييد الحساب الصحيح.
-5. في GitHub افتح Settings → Secrets and variables → Actions وأضف الأسرار التالية:
+5. في GitHub افتح Settings → Secrets and variables → Actions وأضف الأسرار التالية. يمكنك إضافة `TIKTOK_WORKER_URL` بعد أول نشر عندما يظهر عنوان `workers.dev` في سجل النشر:
 
 | اسم السر | مكان استخدامه |
 |---|---|
@@ -39,7 +39,7 @@
 
 ولإنشاء مفتاح تشفير عشوائي، شغّل محلياً `openssl rand -hex 32`. لا ترسله في المحادثة ولا تحفظه في ملفات المشروع.
 
-6. بعد حفظ الأسرار، افتح GitHub → Actions → **Deploy TikTok Cloudflare Worker** → Run workflow. ينشئ سير العمل إعداد KV من السر، ويرفع أسرار Worker، ثم ينشر الخادم ويفحص `/health`.
+6. بعد حفظ أسرار Cloudflare وTikTok (يمكن تأجيل `TIKTOK_WORKER_URL`)، افتح GitHub → Actions → **Deploy TikTok Cloudflare Worker** → Run workflow. ينشئ سير العمل إعداد KV من السر، ويرفع أسرار Worker، ثم ينشر الخادم. إذا أضفت عنوان Worker مسبقاً، يفحص `/health` تلقائياً.
 7. بعد نجاح نشر Worker، تأكد أن قيمة `TIKTOK_WORKER_URL` تطابق عنوانه المنشور، ثم أعد تشغيل سير عمل **Android APK** لبناء نسخة مهيأة للربط.
 
 لا تضع `TIKTOK_CLIENT_SECRET` أو `TOKEN_ENCRYPTION_KEY` في أسرار Android أو داخل APK. لا تشارك أي سر في رسائل المحادثة.
