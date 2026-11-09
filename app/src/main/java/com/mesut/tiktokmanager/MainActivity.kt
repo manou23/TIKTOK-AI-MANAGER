@@ -21,6 +21,10 @@ import android.view.Gravity
 import android.view.View
 import android.widget.*
 import androidx.media3.common.MediaItem
+import androidx.media3.common.C
+import androidx.media3.common.VideoCompositorSettings
+import androidx.media3.common.OverlaySettings
+import androidx.media3.common.util.Size
 import androidx.media3.common.audio.ChannelMixingAudioProcessor
 import androidx.media3.common.audio.ChannelMixingMatrix
 import androidx.media3.common.MimeTypes
@@ -62,6 +66,7 @@ class MainActivity : Activity() {
     private lateinit var sceneListContainer: LinearLayout
     private lateinit var durationSpinner: Spinner
     private lateinit var qualitySpinner: Spinner
+    private lateinit var transitionSpinner: Spinner
     private lateinit var textSizeSpinner: Spinner
     private lateinit var textPositionSpinner: Spinner
     private lateinit var musicVolumeSeek: SeekBar
@@ -291,6 +296,19 @@ class MainActivity : Activity() {
             }
         }
         rootContent.addView(qualitySpinner, matchBottom())
+        rootContent.addView(label("الانتقال بين المشاهد", 13, muted, true))
+        transitionSpinner = Spinner(this).apply {
+            adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item,
+                listOf("بدون انتقال", "تلاشي متداخل — 0.3 ثانية", "تلاشي متداخل — 0.5 ثانية", "تلاشي متداخل — 0.8 ثانية"))
+            setSelection(prefs.getInt("transition_index", 0).coerceIn(0, 3))
+            onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
+                override fun onNothingSelected(parent: android.widget.AdapterView<*>?) {}
+                override fun onItemSelected(parent: android.widget.AdapterView<*>?, view: View?, position: Int, id: Long) {
+                    prefs.edit().putInt("transition_index", position).apply()
+                }
+            }
+        }
+        rootContent.addView(transitionSpinner, matchBottom())
 
         section("5. إنشاء الفيديو")
         cardText("يمكنك الآن إعادة ترتيب المشاهد أو حذف أي صورة، واختيار مدة المشهد ودقة 1080p أو 720p. معدل الإطارات 30 إطاراً في الثانية.")
@@ -389,8 +407,26 @@ class MainActivity : Activity() {
                     .setEffects(Effects(emptyList(), videoEffects))
                     .build()
             }
-            val videoSequence = EditedMediaItemSequence.Builder(clips).build()
-            val sequences = mutableListOf(videoSequence)
+            val transitionMs = listOf(0L, 300L, 500L, 800L)[transitionSpinner.selectedItemPosition.coerceIn(0, 3)]
+            val videoSequences = if (transitionMs > 0L && clips.size > 1) {
+                val durationUs = durationMs * 1_000L
+                val transitionUs = transitionMs * 1_000L
+                val stepUs = durationUs - transitionUs
+                val totalDurationUs = clips.size * durationUs - (clips.size - 1) * transitionUs
+                clips.mapIndexed { index, clip ->
+                    val startUs = index * stepUs
+                    val endUs = startUs + durationUs
+                    val tailGapUs = (totalDurationUs - endUs).coerceAtLeast(0L)
+                    EditedMediaItemSequence.Builder(setOf(C.TRACK_TYPE_VIDEO)).apply {
+                        if (startUs > 0L) addGap(startUs)
+                        addItem(clip)
+                        if (tailGapUs > 0L) addGap(tailGapUs)
+                    }.build()
+                }
+            } else {
+                listOf(EditedMediaItemSequence.Builder(clips).build())
+            }
+            val sequences = videoSequences.toMutableList()
             audioUri?.let { uri ->
                 val musicItem = EditedMediaItem.Builder(MediaItem.fromUri(uri))
                     .setEffects(Effects(volumeEffects(musicVolumeSeek.progress), emptyList()))
@@ -403,7 +439,13 @@ class MainActivity : Activity() {
                     .build()
                 sequences.add(EditedMediaItemSequence.Builder(voiceItem).build())
             }
-            val composition = Composition.Builder(sequences).build()
+            val compositionBuilder = Composition.Builder(sequences)
+            if (transitionMs > 0L && clips.size > 1) {
+                compositionBuilder.setVideoCompositorSettings(SceneCrossfadeSettings(
+                    clips.size, durationMs * 1_000L, (durationMs - transitionMs) * 1_000L
+                ))
+            }
+            val composition = compositionBuilder.build()
             val transformer = Transformer.Builder(this)
                 .setVideoMimeType(MimeTypes.VIDEO_H264)
                 .setAudioMimeType(MimeTypes.AUDIO_AAC)
@@ -438,6 +480,27 @@ class MainActivity : Activity() {
 
 
 
+    private class SceneCrossfadeSettings(
+        private val sceneCount: Int,
+        private val sceneDurationUs: Long,
+        private val sceneStepUs: Long
+    ) : VideoCompositorSettings {
+        override fun getOutputSize(inputSizes: List<Size>): Size = inputSizes[0]
+
+        override fun getOverlaySettings(inputId: Int, presentationTimeUs: Long): OverlaySettings {
+            if (inputId !in 0 until sceneCount) return StaticOverlaySettings.Builder().setAlphaScale(0f).build()
+            val startUs = inputId * sceneStepUs
+            val endUs = startUs + sceneDurationUs
+            val fadeDurationUs = sceneDurationUs - sceneStepUs
+            val alpha = when {
+                presentationTimeUs < startUs || presentationTimeUs >= endUs -> 0f
+                inputId < sceneCount - 1 && presentationTimeUs > endUs - fadeDurationUs ->
+                    ((endUs - presentationTimeUs).toFloat() / fadeDurationUs.toFloat()).coerceIn(0f, 1f)
+                else -> 1f
+            }
+            return StaticOverlaySettings.Builder().setAlphaScale(alpha).build()
+        }
+    }
     private fun volumeEffects(percent: Int): List<androidx.media3.common.audio.AudioProcessor> {
         val gain = percent.coerceIn(0, 100) / 100f
         val processor = ChannelMixingAudioProcessor()
@@ -664,7 +727,7 @@ class MainActivity : Activity() {
     }
 
     private fun bottomNav() = TextView(this).apply {
-        text = "MESUT TikTok AI Manager  •  الإصدار 1.4.0"
+        text = "MESUT TikTok AI Manager  •  الإصدار 1.5.0"
         textSize = 11f
         gravity = Gravity.CENTER
         setTextColor(muted)
