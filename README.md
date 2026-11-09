@@ -8,7 +8,7 @@
 [![Android APK](https://github.com/manou23/TIKTOK-AI-MANAGER/actions/workflows/android.yml/badge.svg)](https://github.com/manou23/TIKTOK-AI-MANAGER/actions/workflows/android.yml)
 
 ## الإصدار الحالي
-**v1.7.0 — التحقق من سلامة الفيديو قبل الحفظ**
+**v1.8.0 — ربط حساب TikTok الرسمي**
 
 ### ما يعمل في هذا الإصدار
 - اختيار عدة صور من الهاتف مع حفظ الاختيارات بين مرات فتح التطبيق.
@@ -86,4 +86,4 @@
 
 ## الربط الرسمي مع TikTok
 
-راجع [دليل إعداد TikTok Login Kit وContent Posting API](docs/TIKTOK_API_SETUP.md) وإعداد الخادم الآمن قبل ربط الحساب أو تفعيل النشر المباشر.
+راجع [دليل إعداد TikTok Login Kit وContent Posting API](docs/TIKTOK_API_SETUP.md) وإعداد الخادم الآمن. يلزم اعتماد تطبيق TikTok وصلاحيات النشر قبل استخدام النشر العام.
