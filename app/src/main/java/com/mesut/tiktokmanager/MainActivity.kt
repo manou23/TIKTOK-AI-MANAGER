@@ -95,7 +95,7 @@ class MainActivity : Activity() {
         titleInput = EditText(this).apply {
             hint = "عنوان الفيديو (مثلاً: أغرب 5 حقائق)"
             textSize = 15f
-            singleLine = true
+            isSingleLine = true
             setTextColor(ink)
             setPadding(dp(12), dp(12), dp(12), dp(12))
             setText(prefs.getString("title", ""))
