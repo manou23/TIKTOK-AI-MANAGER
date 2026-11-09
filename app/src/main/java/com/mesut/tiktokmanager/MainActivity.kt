@@ -7,6 +7,10 @@ import android.content.Intent
 import android.content.SharedPreferences
 import android.graphics.Color
 import android.graphics.Typeface
+import android.text.SpannableString
+import android.text.Spanned
+import android.text.style.ForegroundColorSpan
+import android.text.style.BackgroundColorSpan
 import android.net.Uri
 import android.os.Bundle
 import android.view.Gravity
@@ -16,6 +20,9 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.effect.Presentation
+import androidx.media3.effect.OverlayEffect
+import androidx.media3.effect.StaticOverlaySettings
+import androidx.media3.effect.TextOverlay
 import androidx.media3.transformer.Effects
 import androidx.media3.transformer.Composition
 import androidx.media3.transformer.EditedMediaItem
@@ -37,6 +44,7 @@ class MainActivity : Activity() {
     private var audioUri: Uri? = null
     private lateinit var titleInput: EditText
     private lateinit var captionInput: EditText
+    private lateinit var overlayTextInput: EditText
     private lateinit var imageInfo: TextView
     private lateinit var audioInfo: TextView
     private lateinit var statusInfo: TextView
@@ -119,6 +127,19 @@ class MainActivity : Activity() {
             layoutDirection = View.LAYOUT_DIRECTION_RTL
         }
         rootContent.addView(captionInput, matchBottom())
+        overlayTextInput = EditText(this).apply {
+            hint = "النص الذي سيظهر فوق الفيديو (اختياري)"
+            textSize = 14f
+            minLines = 2
+            maxLines = 3
+            gravity = Gravity.TOP or Gravity.RIGHT
+            setTextColor(ink)
+            setPadding(dp(12), dp(12), dp(12), dp(12))
+            setText(prefs.getString("overlay_text", ""))
+            setBackgroundColor(Color.WHITE)
+            layoutDirection = View.LAYOUT_DIRECTION_RTL
+        }
+        rootContent.addView(overlayTextInput, matchBottom())
 
         section("2. الصور والمشاهد")
         imageInfo = label(imageSummary(), 13, muted, false)
@@ -239,7 +260,7 @@ class MainActivity : Activity() {
             return
         }
         val title = titleInput.text.toString().trim()
-        prefs.edit().putString("title", title).putString("caption", captionInput.text.toString()).apply()
+        prefs.edit().putString("title", title).putString("caption", captionInput.text.toString()).putString("overlay_text", overlayTextInput.text.toString()).apply()
         exportButton.isEnabled = false
         statusInfo.text = "جارٍ تجهيز الفيديو... لا تغلق التطبيق."
         val output = File(cacheDir, "mesut_video_${System.currentTimeMillis()}.mp4")
@@ -247,11 +268,25 @@ class MainActivity : Activity() {
         val width = if (qualitySpinner.selectedItemPosition == 1) 720 else 1080
         val height = if (qualitySpinner.selectedItemPosition == 1) 1280 else 1920
         try {
+            val videoEffects = mutableListOf<androidx.media3.common.Effect>(
+                Presentation.createForWidthAndHeight(width, height, Presentation.LAYOUT_SCALE_TO_FIT_WITH_CROP)
+            )
+            val overlayText = overlayTextInput.text.toString().trim()
+            if (overlayText.isNotEmpty()) {
+                val styledText = SpannableString(overlayText)
+                styledText.setSpan(ForegroundColorSpan(Color.WHITE), 0, styledText.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                styledText.setSpan(BackgroundColorSpan(Color.argb(190, 15, 20, 30)), 0, styledText.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                val settings = StaticOverlaySettings.Builder()
+                    .setOverlayFrameAnchor(0f, 0f)
+                    .setBackgroundFrameAnchor(0f, -0.72f)
+                    .build()
+                videoEffects.add(OverlayEffect(listOf(TextOverlay.createStaticTextOverlay(styledText, settings))))
+            }
             val clips = imageUris.map { uri ->
                 val media = MediaItem.Builder().setUri(uri).setImageDurationMs(durationMs).build()
                 EditedMediaItem.Builder(media)
                     .setFrameRate(30)
-                    .setEffects(Effects(emptyList(), listOf(Presentation.createForWidthAndHeight(width, height, Presentation.LAYOUT_SCALE_TO_FIT_WITH_CROP))))
+                    .setEffects(Effects(emptyList(), videoEffects))
                     .build()
             }
             val videoSequence = EditedMediaItemSequence.Builder(clips).build()
