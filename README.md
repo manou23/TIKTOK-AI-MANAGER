@@ -43,6 +43,8 @@
 - لا يطلب التطبيق كلمة مرور TikTok.
 
 ## البناء والتنزيل
+[**⬇️ افتح صفحة تنزيل أحدث APK من GitHub Actions**](https://github.com/manou23/TIKTOK-AI-MANAGER/actions/workflows/android.yml)
+
 يتم بناء APK تجريبي تلقائياً عند كل تحديث إلى `main`.
 1. افتح تبويب **Actions**.
 2. افتح أحدث تشغيل ناجح من **Android APK**.
