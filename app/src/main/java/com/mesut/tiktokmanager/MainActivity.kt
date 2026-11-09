@@ -256,7 +256,7 @@ class MainActivity : Activity() {
                 uploadFileChunksToTikTok(uploadFile, uploadUrl, chunkSize)
                 var finalStatus = "PROCESSING_UPLOAD"
                 var completed = false
-                for (attempt in 0 until 15) {
+                for (attempt in 0 until 3) {
                     val statusResult = callTikTokWorker("/publish/status", session, JSONObject().put("publish_id", publishId))
                     val statusObject = statusResult.optJSONObject("status") ?: JSONObject()
                     finalStatus = statusObject.optString("status", "UNKNOWN")
@@ -267,7 +267,7 @@ class MainActivity : Activity() {
                     if (finalStatus == "FAILED") {
                         throw IllegalStateException(statusObject.optString("fail_reason", "رفض TikTok نشر الفيديو"))
                     }
-                    Thread.sleep(2_000)
+                    Thread.sleep(10_000)
                 }
                 runOnUiThread {
                     statusInfo.text = if (completed) {
