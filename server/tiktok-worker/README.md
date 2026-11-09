@@ -52,6 +52,7 @@ curl https://YOUR-WORKER.workers.dev/health
 - `POST /creator-info` — fetch the creator's current posting options.
 - `POST /publish/init` — validate creator privacy options and initialize a TikTok video upload.
 - `POST /publish/status` — check the TikTok publishing status.
+- `POST /videos` — retrieve the latest video list and available engagement metrics (requires `video.list`).
 - `POST /oauth/disconnect` — disconnect the current app session and account token.
 
 Authenticated endpoints require `Authorization: Bearer <session_token>`.
