@@ -31,11 +31,12 @@ class TikTokScheduledPublishWorker(
             val uriValue = inputData.getString(KEY_VIDEO_URI)
                 ?: throw IllegalStateException("ملف الفيديو المجدول غير موجود")
             val uri = Uri.parse(uriValue)
-            tempFile = File(applicationContext.cacheDir, "scheduled_tiktok_$id.mp4")
+            val workingFile = File(applicationContext.cacheDir, "scheduled_tiktok_$id.mp4")
+            tempFile = workingFile
             val source = applicationContext.contentResolver.openInputStream(uri)
                 ?: throw IllegalStateException("تعذر فتح ملف الفيديو المجدول")
-            source.use { input -> FileOutputStream(tempFile).use { output -> input.copyTo(output) } }
-            val videoSize = tempFile.length()
+            source.use { input -> FileOutputStream(workingFile).use { output -> input.copyTo(output) } }
+            val videoSize = workingFile.length()
             if (videoSize <= 0L) throw IllegalStateException("ملف الفيديو المجدول فارغ")
 
             val minChunk = 5L * 1024L * 1024L
@@ -54,7 +55,7 @@ class TikTokScheduledPublishWorker(
             val init = callWorker("/publish/init", session, payload)
             if (!init.optBoolean("ok")) throw IllegalStateException(init.optString("error", "فشل تهيئة النشر المجدول"))
             val publishId = init.getString("publish_id")
-            uploadChunks(tempFile, init.getString("upload_url"), chunkSize)
+            uploadChunks(workingFile, init.getString("upload_url"), chunkSize)
 
             var status = "PROCESSING_UPLOAD"
             for (attempt in 0 until 3) {
