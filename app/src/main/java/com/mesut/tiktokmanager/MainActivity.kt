@@ -45,13 +45,14 @@ class MainActivity : Activity() {
     private val prefs: SharedPreferences by lazy { getSharedPreferences("mesut_creator", Context.MODE_PRIVATE) }
     private val imageUris = mutableListOf<Uri>()
     private var audioUri: Uri? = null
-    private var audioShouldLoop = true
+    private var voiceoverUri: Uri? = null
     private lateinit var titleInput: EditText
     private lateinit var captionInput: EditText
     private lateinit var overlayTextInput: EditText
     private lateinit var narrationInput: EditText
     private lateinit var imageInfo: TextView
     private lateinit var audioInfo: TextView
+    private lateinit var voiceoverInfo: TextView
     private lateinit var statusInfo: TextView
     private lateinit var exportButton: Button
     private lateinit var rootContent: LinearLayout
@@ -78,7 +79,7 @@ class MainActivity : Activity() {
             for (i in 0 until json.length()) imageUris.add(Uri.parse(json.getString(i)))
         } catch (_: Exception) { imageUris.clear() }
         audioUri = prefs.getString("audio", null)?.let { Uri.parse(it) }
-        audioShouldLoop = prefs.getBoolean("audio_loop", true)
+        voiceoverUri = prefs.getString("voiceover", null)?.let { Uri.parse(it) }
         lastExportUri = prefs.getString("last_export_uri", null)?.let { Uri.parse(it) }
     }
 
@@ -86,7 +87,7 @@ class MainActivity : Activity() {
         val json = JSONArray()
         imageUris.forEach { json.put(it.toString()) }
         prefs.edit().putString("images", json.toString())
-            .putString("audio", audioUri?.toString()).putBoolean("audio_loop", audioShouldLoop).apply()
+            .putString("audio", audioUri?.toString()).putString("voiceover", voiceoverUri?.toString()).apply()
     }
 
     private fun showStudio() {
@@ -178,12 +179,18 @@ class MainActivity : Activity() {
         }
         rootContent.addView(narrationInput, matchBottom())
         actionSecondary("إنشاء تعليق صوتي عربي") { generateArabicVoiceover() }
+        voiceoverInfo = label(voiceoverSummary(), 13, muted, false)
+        rootContent.addView(voiceoverInfo)
+        actionSecondary("إزالة التعليق الصوتي") {
+            voiceoverUri = null
+            saveDraft()
+            refreshSelectionLabels()
+        }
         audioInfo = label(audioSummary(), 13, muted, false)
         rootContent.addView(audioInfo)
         actionSecondary("اختيار ملف صوتي") { pickAudio() }
         actionSecondary("إزالة الصوت") {
             audioUri = null
-            audioShouldLoop = true
             saveDraft()
             refreshSelectionLabels()
         }
@@ -268,7 +275,6 @@ class MainActivity : Activity() {
         } else if (requestCode == PICK_AUDIO) {
             data.data?.let {
                 audioUri = it
-                audioShouldLoop = true
                 try { contentResolver.takePersistableUriPermission(it, Intent.FLAG_GRANT_READ_URI_PERMISSION) } catch (_: Exception) {}
                 saveDraft()
                 refreshSelectionLabels()
@@ -314,8 +320,12 @@ class MainActivity : Activity() {
             val videoSequence = EditedMediaItemSequence.Builder(clips).build()
             val sequences = mutableListOf(videoSequence)
             audioUri?.let { uri ->
-                val audioItem = EditedMediaItem.Builder(MediaItem.fromUri(uri)).build()
-                sequences.add(EditedMediaItemSequence.Builder(audioItem).setIsLooping(audioShouldLoop).build())
+                val musicItem = EditedMediaItem.Builder(MediaItem.fromUri(uri)).build()
+                sequences.add(EditedMediaItemSequence.Builder(musicItem).setIsLooping(true).build())
+            }
+            voiceoverUri?.let { uri ->
+                val voiceItem = EditedMediaItem.Builder(MediaItem.fromUri(uri)).build()
+                sequences.add(EditedMediaItemSequence.Builder(voiceItem).build())
             }
             val composition = Composition.Builder(sequences).build()
             val transformer = Transformer.Builder(this)
@@ -376,8 +386,7 @@ class MainActivity : Activity() {
                 override fun onStart(utteranceId: String) {}
                 override fun onDone(utteranceId: String) {
                     runOnUiThread {
-                        audioUri = Uri.fromFile(File(filesDir, "mesut_arabic_voice.wav"))
-                        audioShouldLoop = false
+                        voiceoverUri = Uri.fromFile(File(filesDir, "mesut_arabic_voice.wav"))
                         saveDraft()
                         refreshSelectionLabels()
                         statusInfo.text = "تم إنشاء التعليق الصوتي العربي. سيُستخدم تلقائياً عند تصدير الفيديو."
@@ -453,6 +462,7 @@ class MainActivity : Activity() {
     private fun refreshSelectionLabels() {
         imageInfo.text = imageSummary()
         audioInfo.text = audioSummary()
+        voiceoverInfo.text = voiceoverSummary()
         renderSceneList()
     }
 
@@ -511,7 +521,8 @@ class MainActivity : Activity() {
         setBackgroundColor(Color.rgb(230, 235, 241))
         setOnClickListener { onClick() }
     }
-    private fun audioSummary() = if (audioUri == null) "لم تتم إضافة صوت. يمكن إنشاء فيديو صامت." else "تم اختيار ملف صوتي للخلفية."
+    private fun audioSummary() = if (audioUri == null) "لم تتم إضافة موسيقى خلفية." else "تم اختيار موسيقى خلفية (تتكرر لتغطية مدة الفيديو)."
+    private fun voiceoverSummary() = if (voiceoverUri == null) "لم يتم إنشاء تعليق صوتي بعد." else "التعليق الصوتي جاهز وسيُضاف دون تكرار."
 
     private fun section(text: String) {
         rootContent.addView(label(text, 17, ink, true).apply { setPadding(0, dp(18), 0, dp(8)) })
