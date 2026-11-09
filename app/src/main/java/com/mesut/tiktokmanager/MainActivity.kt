@@ -138,6 +138,11 @@ class MainActivity : Activity() {
             Toast.makeText(this, "اربط حساب TikTok أولاً.", Toast.LENGTH_LONG).show()
             return
         }
+        val grantedScopes = prefs.getString("tiktok_granted_scopes", "").orEmpty()
+        if (!grantedScopes.split(",").map { it.trim() }.contains("video.publish")) {
+            Toast.makeText(this, "الحساب غير مخوّل بصلاحية video.publish. وافق على الصلاحية في TikTok Developer Portal ثم أعد الربط.", Toast.LENGTH_LONG).show()
+            return
+        }
         if (lastExportUri == null) {
             Toast.makeText(this, "أنشئ فيديو MP4 أولاً.", Toast.LENGTH_LONG).show()
             return
@@ -398,13 +403,13 @@ class MainActivity : Activity() {
                 return
             }
             prefs.edit().remove("tiktok_code_verifier").remove("tiktok_oauth_state").apply()
-            exchangeTikTokAuthorizationCode(response.authCode, verifier)
+            exchangeTikTokAuthorizationCode(response.authCode, verifier, response.grantedPermissions)
         } catch (e: Exception) {
             Toast.makeText(this, "تعذر قراءة استجابة TikTok: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
         }
     }
 
-    private fun exchangeTikTokAuthorizationCode(code: String, verifier: String) {
+    private fun exchangeTikTokAuthorizationCode(code: String, verifier: String, grantedPermissions: String) {
         Thread {
             try {
                 val body = JSONObject()
@@ -415,6 +420,7 @@ class MainActivity : Activity() {
                 if (!result.optBoolean("ok")) throw IllegalStateException(result.optString("error", "فشل ربط حساب TikTok"))
                 val sessionToken = result.getString("session_token")
                 saveTikTokSessionToken(sessionToken)
+                prefs.edit().putString("tiktok_granted_scopes", grantedPermissions).apply()
                 val creatorResult = callTikTokWorker("/creator-info", sessionToken, JSONObject())
                 val creator = creatorResult.optJSONObject("creator")
                 val nickname = creator?.optString("creator_nickname").orEmpty()
@@ -493,7 +499,7 @@ class MainActivity : Activity() {
     private fun disconnectTikTokAccount() {
         val token = readTikTokSessionToken()
         if (token.isNullOrBlank()) {
-            prefs.edit().remove("tiktok_session_encrypted").apply()
+            prefs.edit().remove("tiktok_session_encrypted").remove("tiktok_granted_scopes").apply()
             tiktokAccountInfo?.text = "لم يتم ربط حساب TikTok."
             return
         }
