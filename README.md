@@ -8,7 +8,7 @@
 [![Android APK](https://github.com/manou23/TIKTOK-AI-MANAGER/actions/workflows/android.yml/badge.svg)](https://github.com/manou23/TIKTOK-AI-MANAGER/actions/workflows/android.yml)
 
 ## الإصدار الحالي
-**v1.8.0 — ربط حساب TikTok الرسمي**
+**v1.9.0 — النشر المباشر ومتابعة حالة الفيديو**
 
 ### ما يعمل في هذا الإصدار
 - اختيار عدة صور من الهاتف مع حفظ الاختيارات بين مرات فتح التطبيق.
