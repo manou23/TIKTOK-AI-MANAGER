@@ -11,6 +11,15 @@ function json(body, status = 200) {
   });
 }
 
+function redirectToApp(query) {
+  const target = new URL(APP_CALLBACK);
+  for (const [key, value] of Object.entries(query)) target.searchParams.set(key, value);
+  return new Response(null, {
+    status: 302,
+    headers: { location: target.toString(), "cache-control": "no-store" }
+  });
+}
+
 function randomToken() {
   return Array.from(crypto.getRandomValues(new Uint8Array(32)), (b) => b.toString(16).padStart(2, "0")).join("");
 }
@@ -107,9 +116,9 @@ async function oauthCallback(request, env, url) {
   const code = url.searchParams.get("code") || "";
   const stateKey = `ig_oauth_state:${await hash(state)}`;
   const validState = state ? await env.TOKENS.get(stateKey) : null;
-  if (!validState) return Response.redirect(APP_CALLBACK + "?error=invalid_state", 302);
+  if (!validState) return redirectToApp({ error: "invalid_state" });
   await env.TOKENS.delete(stateKey);
-  if (!code) return Response.redirect(APP_CALLBACK + "?error=authorization_denied", 302);
+  if (!code) return redirectToApp({ error: "authorization_denied" });
 
   const shortToken = await graphRequest(`${cfg.version}/oauth/access_token`, null, {
     client_id: cfg.appId,
@@ -128,7 +137,7 @@ async function oauthCallback(request, env, url) {
     fields: "id,name,access_token,instagram_business_account{id,username}"
   });
   const page = (pages.data || []).find((item) => item.instagram_business_account?.id && item.access_token);
-  if (!page) return Response.redirect(APP_CALLBACK + "?error=no_professional_account", 302);
+  if (!page) return redirectToApp({ error: "no_professional_account" });
 
   const ig = page.instagram_business_account;
   const account = {
@@ -141,7 +150,7 @@ async function oauthCallback(request, env, url) {
   await env.TOKENS.put(`ig_account:${ig.id}`, await encrypt(account, env), { expirationTtl: SESSION_TTL });
   const handoff = randomToken();
   await env.TOKENS.put(`ig_handoff:${await hash(handoff)}`, String(ig.id), { expirationTtl: 180 });
-  return Response.redirect(APP_CALLBACK + "?code=" + encodeURIComponent(handoff), 302);
+  return redirectToApp({ code: handoff });
 }
 
 async function exchangeHandoff(request, env) {
