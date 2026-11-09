@@ -7,6 +7,9 @@ import android.content.Intent
 import android.content.SharedPreferences
 import android.graphics.Color
 import android.graphics.Bitmap
+import android.security.keystore.KeyGenParameterSpec
+import android.security.keystore.KeyProperties
+import android.util.Base64
 import android.media.MediaMetadataRetriever
 import android.graphics.Typeface
 import android.text.SpannableString
@@ -41,11 +44,21 @@ import androidx.media3.transformer.EditedMediaItemSequence
 import androidx.media3.transformer.ExportException
 import androidx.media3.transformer.ExportResult
 import androidx.media3.transformer.Transformer
+import com.tiktok.open.sdk.auth.AuthApi
+import com.tiktok.open.sdk.auth.AuthRequest
+import com.tiktok.open.sdk.auth.utils.PKCEUtils
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
+import java.net.HttpURLConnection
+import java.net.URL
+import java.security.KeyStore
+import javax.crypto.Cipher
+import javax.crypto.KeyGenerator
+import javax.crypto.SecretKey
+import javax.crypto.spec.GCMParameterSpec
 
 @UnstableApi
 class MainActivity : Activity() {
@@ -76,6 +89,7 @@ class MainActivity : Activity() {
     private lateinit var voiceVolumeSeek: SeekBar
     private lateinit var musicVolumeLabel: TextView
     private lateinit var voiceVolumeLabel: TextView
+    private var tiktokAccountInfo: TextView? = null
     private var lastExportUri: Uri? = null
 
     companion object {
@@ -87,6 +101,13 @@ class MainActivity : Activity() {
         super.onCreate(savedInstanceState)
         loadDraft()
         showStudio()
+        handleTikTokAuthIntent(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleTikTokAuthIntent(intent)
     }
 
     private fun loadDraft() {
@@ -107,6 +128,155 @@ class MainActivity : Activity() {
             .putString("audio", audioUri?.toString()).putString("voiceover", voiceoverUri?.toString()).apply()
     }
 
+
+
+    private fun connectTikTokAccount() {
+        if (BuildConfig.TIKTOK_CLIENT_KEY.isBlank() || BuildConfig.TIKTOK_WORKER_URL.isBlank()) {
+            Toast.makeText(this, "يلزم إعداد TIKTOK_CLIENT_KEY و TIKTOK_WORKER_URL في إعدادات البناء أولاً.", Toast.LENGTH_LONG).show()
+            return
+        }
+        if (BuildConfig.TIKTOK_REDIRECT_URI.isBlank()) {
+            Toast.makeText(this, "عنوان إعادة التوجيه غير مضبوط.", Toast.LENGTH_LONG).show()
+            return
+        }
+        try {
+            val verifier = PKCEUtils.generateCodeVerifier()
+            prefs.edit().putString("tiktok_code_verifier", verifier).apply()
+            val request = AuthRequest(
+                clientKey = BuildConfig.TIKTOK_CLIENT_KEY,
+                scope = "user.info.basic,video.publish",
+                redirectUri = BuildConfig.TIKTOK_REDIRECT_URI,
+                codeVerifier = verifier
+            )
+            AuthApi(activity = this).authorize(request, AuthApi.AuthMethod.TikTokApp)
+        } catch (e: Exception) {
+            Toast.makeText(this, "تعذر بدء تسجيل الدخول إلى TikTok: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun handleTikTokAuthIntent(intent: Intent?) {
+        if (intent == null || BuildConfig.TIKTOK_CLIENT_KEY.isBlank()) return
+        try {
+            val response = AuthApi(activity = this).getAuthResponseFromIntent(intent, BuildConfig.TIKTOK_REDIRECT_URI) ?: return
+            if (response.authCode.isNullOrBlank()) {
+                val error = response.authErrorDescription ?: response.errorMsg ?: "تم إلغاء تسجيل الدخول أو رفض الإذن."
+                runOnUiThread { Toast.makeText(this, "TikTok: $error", Toast.LENGTH_LONG).show() }
+                return
+            }
+            val verifier = prefs.getString("tiktok_code_verifier", null)
+            if (verifier.isNullOrBlank()) {
+                Toast.makeText(this, "انتهت بيانات التحقق الآمن. أعد ربط الحساب.", Toast.LENGTH_LONG).show()
+                return
+            }
+            prefs.edit().remove("tiktok_code_verifier").apply()
+            exchangeTikTokAuthorizationCode(response.authCode, verifier)
+        } catch (e: Exception) {
+            Toast.makeText(this, "تعذر قراءة استجابة TikTok: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun exchangeTikTokAuthorizationCode(code: String, verifier: String) {
+        Thread {
+            try {
+                val body = JSONObject()
+                    .put("code", code)
+                    .put("code_verifier", verifier)
+                    .put("redirect_uri", BuildConfig.TIKTOK_REDIRECT_URI)
+                val result = callTikTokWorker("/oauth/exchange", null, body)
+                if (!result.optBoolean("ok")) throw IllegalStateException(result.optString("error", "فشل ربط حساب TikTok"))
+                val sessionToken = result.getString("session_token")
+                saveTikTokSessionToken(sessionToken)
+                val creatorResult = callTikTokWorker("/creator-info", sessionToken, JSONObject())
+                val creator = creatorResult.optJSONObject("creator")
+                val nickname = creator?.optString("creator_nickname").orEmpty()
+                val username = creator?.optString("creator_username").orEmpty()
+                runOnUiThread {
+                    tiktokAccountInfo?.text = if (username.isNotBlank()) "متصل: $nickname (@$username)" else "تم ربط حساب TikTok بنجاح."
+                    Toast.makeText(this, "تم ربط حساب TikTok عبر واجهاته الرسمية.", Toast.LENGTH_LONG).show()
+                }
+            } catch (e: Exception) {
+                runOnUiThread { Toast.makeText(this, "فشل ربط TikTok: ${e.localizedMessage}", Toast.LENGTH_LONG).show() }
+            }
+        }.start()
+    }
+
+    private fun callTikTokWorker(path: String, sessionToken: String?, payload: JSONObject): JSONObject {
+        val base = BuildConfig.TIKTOK_WORKER_URL.trimEnd('/')
+        if (base.isBlank()) throw IllegalStateException("خادم TikTok غير مضبوط")
+        val connection = (URL(base + path).openConnection() as HttpURLConnection).apply {
+            requestMethod = "POST"
+            connectTimeout = 20_000
+            readTimeout = 30_000
+            doOutput = true
+            setRequestProperty("Content-Type", "application/json; charset=utf-8")
+            if (!sessionToken.isNullOrBlank()) setRequestProperty("Authorization", "Bearer $sessionToken")
+        }
+        return try {
+            connection.outputStream.use { it.write(payload.toString().toByteArray(Charsets.UTF_8)) }
+            val code = connection.responseCode
+            val stream = if (code in 200..299) connection.inputStream else connection.errorStream
+            val text = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
+            val json = if (text.isBlank()) JSONObject() else JSONObject(text)
+            if (code !in 200..299) throw IllegalStateException(json.optString("error", "خادم TikTok أعاد HTTP $code"))
+            json
+        } finally {
+            connection.disconnect()
+        }
+    }
+
+    private fun getTikTokSessionKey(): SecretKey {
+        val alias = "mesut_tiktok_session_key"
+        val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
+        val existing = store.getKey(alias, null) as? SecretKey
+        if (existing != null) return existing
+        val generator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore")
+        generator.init(
+            KeyGenParameterSpec.Builder(alias, KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT)
+                .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
+                .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
+                .setRandomizedEncryptionRequired(true)
+                .build()
+        )
+        return generator.generateKey()
+    }
+
+    private fun saveTikTokSessionToken(token: String) {
+        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+        cipher.init(Cipher.ENCRYPT_MODE, getTikTokSessionKey())
+        val encrypted = cipher.doFinal(token.toByteArray(Charsets.UTF_8))
+        val combined = cipher.iv + encrypted
+        prefs.edit().putString("tiktok_session_encrypted", Base64.encodeToString(combined, Base64.NO_WRAP)).apply()
+    }
+
+    private fun readTikTokSessionToken(): String? {
+        val encoded = prefs.getString("tiktok_session_encrypted", null) ?: return null
+        return try {
+            val combined = Base64.decode(encoded, Base64.NO_WRAP)
+            if (combined.size <= 12) return null
+            val iv = combined.copyOfRange(0, 12)
+            val encrypted = combined.copyOfRange(12, combined.size)
+            val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+            cipher.init(Cipher.DECRYPT_MODE, getTikTokSessionKey(), GCMParameterSpec(128, iv))
+            String(cipher.doFinal(encrypted), Charsets.UTF_8)
+        } catch (_: Exception) { null }
+    }
+
+    private fun disconnectTikTokAccount() {
+        val token = readTikTokSessionToken()
+        if (token.isNullOrBlank()) {
+            prefs.edit().remove("tiktok_session_encrypted").apply()
+            tiktokAccountInfo?.text = "لم يتم ربط حساب TikTok."
+            return
+        }
+        Thread {
+            try { callTikTokWorker("/oauth/disconnect", token, JSONObject()) } catch (_: Exception) { }
+            prefs.edit().remove("tiktok_session_encrypted").apply()
+            runOnUiThread {
+                tiktokAccountInfo?.text = "تم فصل حساب TikTok."
+                Toast.makeText(this, "تم فصل الحساب من التطبيق.", Toast.LENGTH_SHORT).show()
+            }
+        }.start()
+    }
 
     private fun savedProjectsFile() = File(filesDir, "mesut_saved_projects.json")
 
@@ -458,6 +628,12 @@ class MainActivity : Activity() {
         actionSecondary("مشاريعي المحفوظة") { showSavedProjectsDialog() }
         actionSecondary("مشاركة آخر فيديو") { shareLastVideo() }
         actionSecondary("فتح مجلد فيديوهات MESUT") { openVideoFolder() }
+
+        section("حساب TikTok")
+        tiktokAccountInfo = label(if (readTikTokSessionToken() != null) "يوجد حساب TikTok مربوط بهذا التطبيق." else "لم يتم ربط حساب TikTok بعد.", 13, muted, false)
+        rootContent.addView(tiktokAccountInfo)
+        actionSecondary("ربط حساب TikTok رسمياً") { connectTikTokAccount() }
+        actionSecondary("فصل حساب TikTok") { disconnectTikTokAccount() }
 
         section("ملاحظة النشر")
         cardText("بعد إنشاء الفيديو، اضغط مشاركة واختر TikTok من قائمة التطبيقات. ستراجع الفيديو وتؤكد النشر داخل TikTok بنفسك. النشر المباشر من داخل التطبيق يحتاج موافقة TikTok الرسمية.")
