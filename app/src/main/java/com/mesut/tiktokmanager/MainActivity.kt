@@ -62,6 +62,7 @@ class MainActivity : Activity() {
             for (i in 0 until json.length()) imageUris.add(Uri.parse(json.getString(i)))
         } catch (_: Exception) { imageUris.clear() }
         audioUri = prefs.getString("audio", null)?.let { Uri.parse(it) }
+        lastExportUri = prefs.getString("last_export_uri", null)?.let { Uri.parse(it) }
     }
 
     private fun saveDraft() {
@@ -228,6 +229,7 @@ class MainActivity : Activity() {
                         try {
                             val savedUri = saveToGallery(output)
                             lastExportUri = savedUri
+                            prefs.edit().putString("last_export_uri", savedUri.toString()).apply()
                             statusInfo.text = "اكتمل إنشاء الفيديو وحُفظ في مجلد Movies/MESUT TikTok."
                             exportButton.isEnabled = true
                             Toast.makeText(this@MainActivity, "تم إنشاء الفيديو بنجاح", Toast.LENGTH_LONG).show()
