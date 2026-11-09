@@ -408,9 +408,15 @@ class MainActivity : Activity() {
             var uploadFile: File? = null
             try {
                 uploadFile = copyLastVideoToCache()
+                val videoSize = uploadFile.length()
                 val minimumChunkSize = 5L * 1024L * 1024L
-                val chunkSize = if (uploadFile.length() < minimumChunkSize) uploadFile.length().toInt() else 10 * 1024 * 1024
-                val totalChunks = maxOf(1, (uploadFile.length() / chunkSize).toInt())
+                val tenMb = 10L * 1024L * 1024L
+                val chunkSize = when {
+                    videoSize < minimumChunkSize -> videoSize.toInt()
+                    videoSize < tenMb -> minimumChunkSize.toInt()
+                    else -> tenMb.toInt()
+                }
+                val totalChunks = ((videoSize + chunkSize - 1L) / chunkSize).toInt()
                 val initPayload = JSONObject()
                     .put("title", caption)
                     .put("privacy_level", privacy)
@@ -467,7 +473,7 @@ class MainActivity : Activity() {
         val totalSize = file.length()
         FileInputStream(file).use { input ->
             var start = 0L
-            val totalChunks = maxOf(1, (totalSize / chunkSize).toInt())
+            val totalChunks = ((totalSize + chunkSize - 1L) / chunkSize).toInt()
             for (chunkIndex in 0 until totalChunks) {
                 val length = if (chunkIndex == totalChunks - 1) (totalSize - start).toInt() else chunkSize
                 val bytes = ByteArray(length)
