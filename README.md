@@ -40,7 +40,7 @@
 ميزات إنشاء الفيديو والمشاريع تعمل محلياً. أما ربط الحساب والنشر والجدولة والتحليلات فتحتاج إلى:
 1. تسجيل تطبيق في TikTok for Developers وإضافة Login Kit وContent Posting API.
 2. موافقة TikTok على الصلاحيات المطلوبة، ومنها `video.publish` و`video.list`.
-3. إعداد Cloudflare Worker وKV والأسرار وفق [دليل إعداد TikTok](docs/TIKTOK_API_SETUP.md).
+3. إعداد Cloudflare Worker وKV والأسرار وفق [دليل إعداد TikTok](docs/TIKTOK_API_SETUP.md)، ثم تشغيل سير عمل النشر اليدوي.
 4. ضبط GitHub Secrets الخاصة بـ `TIKTOK_CLIENT_KEY` و`TIKTOK_REDIRECT_URI` و`TIKTOK_WORKER_URL`.
 
 لا يضع التطبيق كلمة مرور TikTok أو client secret أو refresh token داخل APK. النشر العام لا يعمل قبل موافقة TikTok؛ وقد تقيد التطبيقات غير المدققة المنشورات إلى الخاص.
@@ -85,6 +85,7 @@
 - [المشاريع مفتوحة المصدر والتراخيص](docs/OPEN_SOURCE_REFERENCES.md)
 - [إعداد TikTok Login Kit وContent Posting API](docs/TIKTOK_API_SETUP.md)
 - [إعداد Cloudflare Worker](server/tiktok-worker/README.md)
+- [نشر Worker من GitHub Actions](.github/workflows/deploy-tiktok-worker.yml)
 
 ## التقنيات
 
