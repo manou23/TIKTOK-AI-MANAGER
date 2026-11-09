@@ -7,6 +7,7 @@ import android.content.Intent
 import android.content.SharedPreferences
 import android.graphics.Color
 import android.graphics.Bitmap
+import android.media.MediaMetadataRetriever
 import android.graphics.Typeface
 import android.text.SpannableString
 import android.text.Spanned
@@ -586,12 +587,20 @@ class MainActivity : Activity() {
                 ))
             }
             val composition = compositionBuilder.build()
+            val expectedDurationMs = imageUris.size * durationMs - (imageUris.size - 1) * transitionMs
             val transformer = Transformer.Builder(this)
                 .setVideoMimeType(MimeTypes.VIDEO_H264)
                 .setAudioMimeType(MimeTypes.AUDIO_AAC)
                 .addListener(object : Transformer.Listener {
                     override fun onCompleted(composition: Composition, exportResult: ExportResult) {
                         try {
+                            val validationError = verifyExportedVideo(output, expectedDurationMs, width, height)
+                            if (validationError != null) {
+                                statusInfo.text = validationError
+                                exportButton.isEnabled = true
+                                output.delete()
+                                return
+                            }
                             val savedUri = saveToGallery(output)
                             lastExportUri = savedUri
                             prefs.edit().putString("last_export_uri", savedUri.toString()).apply()
@@ -619,6 +628,26 @@ class MainActivity : Activity() {
     }
 
 
+
+
+    private fun verifyExportedVideo(file: File, expectedDurationMs: Long, expectedWidth: Int, expectedHeight: Int): String? {
+        if (!file.exists() || file.length() < 1_024L) return "فشل التحقق: ملف الفيديو غير موجود أو حجمه غير صالح."
+        val retriever = MediaMetadataRetriever()
+        return try {
+            retriever.setDataSource(file.absolutePath)
+            val duration = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
+            val width = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)?.toIntOrNull() ?: 0
+            val height = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)?.toIntOrNull() ?: 0
+            if (duration <= 0L) "فشل التحقق: لم يتم العثور على مدة صالحة للفيديو."
+            else if (duration < expectedDurationMs * 0.75) "فشل التحقق: مدة الفيديو أقصر بكثير من المدة المطلوبة."
+            else if (width < expectedWidth * 0.75 || height < expectedHeight * 0.75) "فشل التحقق: دقة الفيديو أقل من الدقة المطلوبة."
+            else null
+        } catch (e: Exception) {
+            "تعذر التحقق من ملف الفيديو: ${e.localizedMessage ?: "خطأ في قراءة الملف"}"
+        } finally {
+            try { retriever.release() } catch (_: Exception) {}
+        }
+    }
 
     private fun createTransparentFrameUri(): Uri {
         val file = File(cacheDir, "mesut_transparent_frame.png")
