@@ -1,4 +1,4 @@
-# MESUT TikTok API Worker
+# MESUT Social API Worker — TikTok + Instagram
 
 This Cloudflare Worker keeps TikTok client secrets and refresh tokens off the Android APK. It exchanges the Login Kit authorization code, stores TikTok tokens encrypted in Cloudflare KV, refreshes access tokens, and proxies creator-info, publish initialization, and publish-status requests.
 
@@ -33,7 +33,7 @@ openssl rand -hex 32
 
 Never put the TikTok client secret, encryption key, access token, or refresh token in the Android app or Git repository.
 
-## 3. Deploy
+## 3. Configure Instagram (optional until Meta credentials are approved)\n\nCreate a Meta app with Instagram Graph API / Facebook Login. Add the exact callback URL `https://YOUR-WORKER.workers.dev/instagram/oauth/callback` to Valid OAuth Redirect URIs. The supported first path requires a Business or Creator Instagram account linked to a Facebook Page.\n\nSet the Worker configuration:\n\n```bash\nnpx wrangler secret put META_APP_ID\nnpx wrangler secret put META_APP_SECRET\nnpx wrangler secret put META_REDIRECT_URI\nnpx wrangler secret put META_GRAPH_API_VERSION\n```\n\nUse `v26.0` for `META_GRAPH_API_VERSION` unless your Meta dashboard/docs specify a newer supported version. Reuse the existing `TOKEN_ENCRYPTION_KEY` secret; never put it in the app.\n\nCreate an R2 bucket and attach it to the Worker by adding this to `wrangler.toml` (replace the bucket name if needed):\n\n```toml\n[[r2_buckets]]\nbinding = "MEDIA_BUCKET"\nbucket_name = "mesut-instagram-media"\n```\n\nSet `MEDIA_PUBLIC_BASE_URL` to an HTTPS custom domain mapped to that bucket. The domain must serve uploaded objects publicly to Meta; do not expose the bucket listing. Add an R2 lifecycle rule to delete objects under `instagram/` after 1 day as a safety net. The Worker currently accepts MP4 uploads up to 95 MB.\n\nThe Meta permissions requested by the Facebook Login flow are `pages_show_list`, `pages_read_engagement`, `instagram_basic`, and `instagram_content_publish`. Meta App Review / Advanced Access may be required for users outside app roles.\n\n## 4. Deploy
 
 ```bash
 npm install
@@ -53,13 +53,13 @@ curl https://YOUR-WORKER.workers.dev/health
 - `POST /publish/init` — validate creator privacy options and initialize a TikTok video upload.
 - `POST /publish/status` — check the TikTok publishing status.
 - `POST /videos` — retrieve the latest video list and available engagement metrics (requires `video.list`).
-- `POST /oauth/disconnect` — disconnect the current app session and account token.
+- `POST /oauth/disconnect` — disconnect the current TikTok app session and account token.\n- `GET /instagram/oauth/start` — begin Meta OAuth with a one-time state value.\n- `GET /instagram/oauth/callback` — exchange the Meta code, discover the linked professional account, and return a short-lived app handoff code.\n- `POST /instagram/session/exchange` — exchange the one-time handoff for an opaque app session.\n- `POST /instagram/me` — return the connected Instagram username.\n- `PUT /instagram/media/upload` — stream an MP4 into the R2 bucket (95 MB maximum).\n- `POST /instagram/publish/container` — create a Reel container from the owned R2 object.\n- `POST /instagram/publish/status` — check container processing state.\n- `POST /instagram/publish/finalize` — publish a FINISHED Reel and delete the temporary R2 object.\n- `POST /instagram/disconnect` — revoke the local app session and remove the encrypted account record.
 
-Authenticated endpoints require `Authorization: Bearer <session_token>`.
+Authenticated endpoints require `Authorization: Bearer <session_token>`. Instagram uses its own session token, separate from TikTok.
 
 ## Important limitations
 
 - TikTok must approve the app and the `video.publish` scope before public direct posting is available. Unaudited clients are limited to private posts.
 - Android must send the video bytes to the exact `upload_url` returned by TikTok. The Worker does not proxy large video files.
 - This Worker does not schedule posts itself. Scheduling is an app-side feature and will only execute after the user has explicitly configured and authorized the official TikTok integration.
-- Use HTTPS for the registered redirect URI and Worker URL.
+- Use HTTPS for the registered redirect URI, Worker URL, and R2 public media domain.\n- Instagram Reels are implemented for MP4 video only in this app flow; image posts, carousels, and Stories are not exposed by the current UI.\n- Meta must be able to fetch the R2 media URL without authentication. Keep the URL unpredictable and short-lived, and configure lifecycle deletion for abandoned uploads.\n- The app waits up to three minutes for Meta to finish processing a Reel; it does not claim success before `FINISHED` and `media_publish` return successfully.
