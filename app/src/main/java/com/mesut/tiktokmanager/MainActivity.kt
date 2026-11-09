@@ -7,6 +7,7 @@ import android.content.Intent
 import android.content.SharedPreferences
 import android.graphics.Color
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.util.Base64
 import android.media.MediaMetadataRetriever
 import android.graphics.Typeface
@@ -1382,6 +1383,16 @@ class MainActivity : Activity() {
                 setPadding(dp(8), dp(5), dp(8), dp(5))
                 setBackgroundColor(Color.WHITE)
             }
+            val thumbnail = ImageView(this).apply {
+                layoutParams = LinearLayout.LayoutParams(dp(54), dp(68)).apply {
+                    marginEnd = dp(8)
+                }
+                scaleType = ImageView.ScaleType.CENTER_CROP
+                contentDescription = "معاينة المشهد ${index + 1}"
+                setBackgroundColor(Color.rgb(232, 236, 242))
+                try { setImageBitmap(decodeScenePreview(uri, 180, 240)) } catch (_: Exception) { }
+            }
+            row.addView(thumbnail)
             val name = TextView(this).apply {
                 text = "المشهد ${index + 1}"
                 textSize = 13f
@@ -1389,6 +1400,7 @@ class MainActivity : Activity() {
                 setTypeface(typeface, Typeface.BOLD)
             }
             row.addView(name, LinearLayout.LayoutParams(0, -2, 1f))
+            row.addView(smallSceneButton("معاينة") { showScenePreview(index) })
             row.addView(smallSceneButton("↑") {
                 if (index > 0) {
                     val item = imageUris.removeAt(index)
@@ -1412,6 +1424,60 @@ class MainActivity : Activity() {
             })
             sceneListContainer.addView(row, matchBottom())
         }
+    }
+
+    private fun decodeScenePreview(uri: Uri, requestedWidth: Int, requestedHeight: Int): Bitmap? {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+        var sample = 1
+        while (bounds.outWidth / (sample * 2) >= requestedWidth &&
+            bounds.outHeight / (sample * 2) >= requestedHeight) sample *= 2
+        val options = BitmapFactory.Options().apply { inSampleSize = sample.coerceAtLeast(1) }
+        return contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, options) }
+    }
+
+    private fun showScenePreview(startIndex: Int) {
+        if (imageUris.isEmpty()) return
+        var currentIndex = startIndex.coerceIn(0, imageUris.lastIndex)
+        val preview = ImageView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(-1, dp(360))
+            scaleType = ImageView.ScaleType.FIT_CENTER
+            setBackgroundColor(Color.rgb(20, 24, 34))
+        }
+        val counter = label("", 13, muted, true)
+        val controls = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            layoutDirection = View.LAYOUT_DIRECTION_LTR
+        }
+        lateinit var dialog: android.app.AlertDialog
+        fun renderPreview() {
+            counter.text = "المشهد ${currentIndex + 1} من ${imageUris.size}"
+            preview.setImageBitmap(decodeScenePreview(imageUris[currentIndex], 720, 1080))
+        }
+        controls.addView(smallSceneButton("السابق") {
+            if (currentIndex > 0) { currentIndex--; renderPreview() }
+        })
+        controls.addView(smallSceneButton("التالي") {
+            if (currentIndex < imageUris.lastIndex) { currentIndex++; renderPreview() }
+        })
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(12), dp(8), dp(12), dp(4))
+            addView(preview)
+            addView(counter)
+            addView(controls)
+        }
+        dialog = android.app.AlertDialog.Builder(this)
+            .setTitle("معاينة المشاهد")
+            .setView(content)
+            .setPositiveButton("إغلاق", null)
+            .create()
+        dialog.setOnShowListener {
+            renderPreview()
+        }
+        dialog.show()
     }
 
     private fun smallSceneButton(caption: String, onClick: () -> Unit) = Button(this).apply {
