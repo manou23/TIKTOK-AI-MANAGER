@@ -21,8 +21,8 @@ import android.view.Gravity
 import android.view.View
 import android.widget.*
 import androidx.media3.common.MediaItem
-import androidx.media3.common.C
-import androidx.media3.common.audio.GainProcessor
+import androidx.media3.common.audio.ChannelMixingAudioProcessor
+import androidx.media3.common.audio.ChannelMixingMatrix
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.effect.Presentation
@@ -393,13 +393,13 @@ class MainActivity : Activity() {
             val sequences = mutableListOf(videoSequence)
             audioUri?.let { uri ->
                 val musicItem = EditedMediaItem.Builder(MediaItem.fromUri(uri))
-                    .setEffects(volumeEffects(musicVolumeSeek.progress), emptyList())
+                    .setEffects(Effects(volumeEffects(musicVolumeSeek.progress), emptyList()))
                     .build()
                 sequences.add(EditedMediaItemSequence.Builder(musicItem).setIsLooping(true).build())
             }
             voiceoverUri?.let { uri ->
                 val voiceItem = EditedMediaItem.Builder(MediaItem.fromUri(uri))
-                    .setEffects(volumeEffects(voiceVolumeSeek.progress), emptyList())
+                    .setEffects(Effects(volumeEffects(voiceVolumeSeek.progress), emptyList()))
                     .build()
                 sequences.add(EditedMediaItemSequence.Builder(voiceItem).build())
             }
@@ -440,10 +440,12 @@ class MainActivity : Activity() {
 
     private fun volumeEffects(percent: Int): List<androidx.media3.common.audio.AudioProcessor> {
         val gain = percent.coerceIn(0, 100) / 100f
-        return listOf(GainProcessor(object : GainProcessor.GainProvider {
-            override fun getGainFactorAtSamplePosition(samplePosition: Long, sampleRate: Int): Float = gain
-            override fun isUnityUntil(samplePosition: Long, sampleRate: Int): Long = C.TIME_END_OF_SOURCE
-        }))
+        val processor = ChannelMixingAudioProcessor()
+        for (channels in 1..6) {
+            val matrix = ChannelMixingMatrix.createForConstantGain(channels, channels).scaleBy(gain)
+            processor.putChannelMixingMatrix(matrix)
+        }
+        return listOf(processor)
     }
 
     private fun generateArabicVoiceover() {
