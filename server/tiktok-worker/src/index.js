@@ -178,10 +178,14 @@ export default {
       if (request.method === "POST" && url.pathname === "/publish/init") {
         const session = await requireSession(request, env);
         const input = await request.json();
-        if (!input.title || !input.privacy_level || !Number.isSafeInteger(input.video_size) || input.video_size <= 0 ||
-            !Number.isSafeInteger(input.chunk_size) || input.chunk_size <= 0 ||
-            !Number.isSafeInteger(input.total_chunk_count) || input.total_chunk_count <= 0) {
+        if (!input.title || !input.privacy_level || !Number.isSafeInteger(input.video_size) || input.video_size <= 0 || input.video_size > 4 * 1024 * 1024 * 1024 ||
+            !Number.isSafeInteger(input.chunk_size) || input.chunk_size <= 0 || input.chunk_size > 64 * 1024 * 1024 ||
+            !Number.isSafeInteger(input.total_chunk_count) || input.total_chunk_count <= 0 || input.total_chunk_count > 1000) {
           return response({ ok: false, error: "Invalid title, privacy, or upload chunk metadata" }, 400);
+        }
+        const expectedChunks = Math.max(1, Math.floor(input.video_size / input.chunk_size));
+        if (input.total_chunk_count !== expectedChunks || (input.video_size >= 5 * 1024 * 1024 && input.chunk_size < 5 * 1024 * 1024)) {
+          return response({ ok: false, error: "Chunk count or size does not meet TikTok media-transfer rules" }, 400);
         }
         const creator = await tiktokPost("/v2/post/publish/creator_info/query/", session.account, {});
         const allowed = creator.privacy_level_options || [];
@@ -205,6 +209,14 @@ export default {
           }
         });
         return response({ ok: true, publish_id: data.publish_id, upload_url: data.upload_url });
+      }
+
+      if (request.method === "POST" && url.pathname === "/videos") {
+        const session = await requireSession(request, env);
+        const input = await request.json().catch(() => ({}));
+        const fields = "id,title,view_count,like_count,comment_count,share_count,create_time,share_url";
+        const data = await tiktokPost("/v2/video/list/?fields=" + fields, session.account, { max_count: Math.min(20, Math.max(1, Number(input.max_count || 20))), cursor: Number(input.cursor || 0) });
+        return response({ ok: true, videos: data.videos || [], cursor: data.cursor || 0, has_more: Boolean(data.has_more) });
       }
 
       if (request.method === "POST" && url.pathname === "/publish/status") {
