@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
 import android.graphics.Color
+import android.graphics.Bitmap
 import android.graphics.Typeface
 import android.text.SpannableString
 import android.text.Spanned
@@ -21,7 +22,6 @@ import android.view.Gravity
 import android.view.View
 import android.widget.*
 import androidx.media3.common.MediaItem
-import androidx.media3.common.C
 import androidx.media3.common.VideoCompositorSettings
 import androidx.media3.common.OverlaySettings
 import androidx.media3.common.util.Size
@@ -43,6 +43,7 @@ import androidx.media3.transformer.Transformer
 import org.json.JSONArray
 import java.io.File
 import java.io.FileInputStream
+import java.io.FileOutputStream
 
 @UnstableApi
 class MainActivity : Activity() {
@@ -410,18 +411,18 @@ class MainActivity : Activity() {
             val transitionMs = listOf(0L, 300L, 500L, 800L)[transitionSpinner.selectedItemPosition.coerceIn(0, 3)]
             val videoSequences = if (transitionMs > 0L && clips.size > 1) {
                 val durationUs = durationMs * 1_000L
-                val transitionUs = transitionMs * 1_000L
-                val stepUs = durationUs - transitionUs
-                val totalDurationUs = clips.size * durationUs - (clips.size - 1) * transitionUs
+                val stepUs = durationUs - transitionMs * 1_000L
+                val totalDurationUs = clips.size * durationUs - (clips.size - 1) * transitionMs * 1_000L
+                val transparentUri = createTransparentFrameUri()
                 clips.mapIndexed { index, clip ->
                     val startUs = index * stepUs
                     val endUs = startUs + durationUs
-                    val tailGapUs = (totalDurationUs - endUs).coerceAtLeast(0L)
-                    EditedMediaItemSequence.Builder(setOf(C.TRACK_TYPE_VIDEO)).apply {
-                        if (startUs > 0L) addGap(startUs)
-                        addItem(clip)
-                        if (tailGapUs > 0L) addGap(tailGapUs)
-                    }.build()
+                    val tailUs = (totalDurationUs - endUs).coerceAtLeast(0L)
+                    val sequenceItems = mutableListOf<EditedMediaItem>()
+                    if (startUs > 0L) sequenceItems.add(stillImageItem(transparentUri, startUs / 1_000L))
+                    sequenceItems.add(clip)
+                    if (tailUs > 0L) sequenceItems.add(stillImageItem(transparentUri, tailUs / 1_000L))
+                    EditedMediaItemSequence.Builder(sequenceItems).build()
                 }
             } else {
                 listOf(EditedMediaItemSequence.Builder(clips).build())
@@ -480,6 +481,20 @@ class MainActivity : Activity() {
 
 
 
+    private fun createTransparentFrameUri(): Uri {
+        val file = File(cacheDir, "mesut_transparent_frame.png")
+        if (!file.exists()) {
+            val bitmap = Bitmap.createBitmap(2, 2, Bitmap.Config.ARGB_8888)
+            FileOutputStream(file).use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+            bitmap.recycle()
+        }
+        return Uri.fromFile(file)
+    }
+
+    private fun stillImageItem(uri: Uri, durationMs: Long): EditedMediaItem {
+        val media = MediaItem.Builder().setUri(uri).setImageDurationMs(durationMs.coerceAtLeast(1L)).build()
+        return EditedMediaItem.Builder(media).setFrameRate(30).build()
+    }
     private class SceneCrossfadeSettings(
         private val sceneCount: Int,
         private val sceneDurationUs: Long,
@@ -494,7 +509,9 @@ class MainActivity : Activity() {
             val fadeDurationUs = sceneDurationUs - sceneStepUs
             val alpha = when {
                 presentationTimeUs < startUs || presentationTimeUs >= endUs -> 0f
-                inputId < sceneCount - 1 && presentationTimeUs > endUs - fadeDurationUs ->
+                inputId > 0 && presentationTimeUs < startUs + fadeDurationUs ->
+                    ((presentationTimeUs - startUs).toFloat() / fadeDurationUs.toFloat()).coerceIn(0f, 1f)
+                inputId < sceneCount - 1 && presentationTimeUs >= endUs - fadeDurationUs ->
                     ((endUs - presentationTimeUs).toFloat() / fadeDurationUs.toFloat()).coerceIn(0f, 1f)
                 else -> 1f
             }
