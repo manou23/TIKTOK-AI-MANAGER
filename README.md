@@ -7,7 +7,7 @@
 
 <p align="center">
   <a href="https://github.com/manou23/TIKTOK-AI-MANAGER/actions/workflows/android.yml"><img src="https://github.com/manou23/TIKTOK-AI-MANAGER/actions/workflows/android.yml/badge.svg" alt="Android Build"></a>
-  <img src="https://img.shields.io/badge/Version-2.0.2-blue" alt="Version 2.0.0">
+  <img src="https://img.shields.io/badge/Version-2.0.2-blue" alt="Version 2.0.2">
   <img src="https://img.shields.io/badge/Platform-Android-green" alt="Android">
   <img src="https://img.shields.io/badge/Language-Kotlin-purple" alt="Kotlin">
   <img src="https://img.shields.io/badge/API-TikTok%20Official-000000" alt="TikTok Official API">
