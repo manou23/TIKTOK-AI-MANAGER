@@ -134,6 +134,172 @@ class MainActivity : Activity() {
 
 
 
+
+    private fun chooseTikTokScheduleTime() {
+        if (lastExportUri == null) {
+            Toast.makeText(this, "أنشئ فيديو MP4 أولاً.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val now = Calendar.getInstance()
+        android.app.DatePickerDialog(this, { _, year, month, day ->
+            val date = Calendar.getInstance().apply {
+                set(Calendar.YEAR, year)
+                set(Calendar.MONTH, month)
+                set(Calendar.DAY_OF_MONTH, day)
+            }
+            android.app.TimePickerDialog(this, { _, hour, minute ->
+                date.set(Calendar.HOUR_OF_DAY, hour)
+                date.set(Calendar.MINUTE, minute)
+                date.set(Calendar.SECOND, 0)
+                date.set(Calendar.MILLISECOND, 0)
+                val scheduledAt = date.timeInMillis
+                if (scheduledAt < System.currentTimeMillis() + 60_000L) {
+                    Toast.makeText(this, "اختر موعداً مستقبلياً بعد دقيقة على الأقل.", Toast.LENGTH_LONG).show()
+                } else {
+                    startTikTokPublishFlow(scheduledAt)
+                }
+            }, now.get(Calendar.HOUR_OF_DAY), now.get(Calendar.MINUTE), true).show()
+        }, now.get(Calendar.YEAR), now.get(Calendar.MONTH), now.get(Calendar.DAY_OF_MONTH)).show()
+    }
+
+    private fun enqueueScheduledTikTokPost(
+        scheduledAtMillis: Long,
+        privacy: String,
+        caption: String,
+        disableComments: Boolean,
+        disableDuet: Boolean,
+        disableStitch: Boolean,
+        isAiGenerated: Boolean
+    ) {
+        val uri = lastExportUri ?: run {
+            Toast.makeText(this, "لا يوجد فيديو لجدولته.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val workName = "mesut_tiktok_post_\${scheduledAtMillis}_\${System.currentTimeMillis()}"
+        val data = workDataOf(
+            TikTokScheduledPublishWorker.KEY_WORK_NAME to workName,
+            TikTokScheduledPublishWorker.KEY_VIDEO_URI to uri.toString(),
+            TikTokScheduledPublishWorker.KEY_CAPTION to caption,
+            TikTokScheduledPublishWorker.KEY_PRIVACY to privacy,
+            TikTokScheduledPublishWorker.KEY_DISABLE_COMMENTS to disableComments,
+            TikTokScheduledPublishWorker.KEY_DISABLE_DUET to disableDuet,
+            TikTokScheduledPublishWorker.KEY_DISABLE_STITCH to disableStitch,
+            TikTokScheduledPublishWorker.KEY_IS_AIGC to isAiGenerated
+        )
+        val constraints = Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()
+        val request = OneTimeWorkRequestBuilder<TikTokScheduledPublishWorker>()
+            .setInitialDelay((scheduledAtMillis - System.currentTimeMillis()).coerceAtLeast(0L), TimeUnit.MILLISECONDS)
+            .setConstraints(constraints)
+            .setInputData(data)
+            .addTag("mesut_tiktok_scheduled")
+            .build()
+        WorkManager.getInstance(this).enqueueUniqueWork(workName, ExistingWorkPolicy.REPLACE, request)
+        val items = try { JSONArray(prefs.getString("scheduled_posts", "[]")) } catch (_: Exception) { JSONArray() }
+        items.put(JSONObject()
+            .put("workName", workName)
+            .put("scheduledAt", scheduledAtMillis)
+            .put("caption", caption)
+            .put("privacy", privacy)
+            .put("status", "مجدول")
+            .put("videoUri", uri.toString()))
+        prefs.edit().putString("scheduled_posts", items.toString()).apply()
+        statusInfo.text = "تمت جدولة الفيديو. قد يتأخر التنفيذ قليلاً حسب اتصال الهاتف وقيود Android."
+        Toast.makeText(this, "تمت إضافة الفيديو إلى جدول النشر.", Toast.LENGTH_LONG).show()
+    }
+
+    private fun showScheduledPostsDialog() {
+        val items = try { JSONArray(prefs.getString("scheduled_posts", "[]")) } catch (_: Exception) { JSONArray() }
+        if (items.length() == 0) {
+            Toast.makeText(this, "لا توجد منشورات مجدولة.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val labels = Array(items.length()) { index ->
+            val item = items.optJSONObject(index) ?: JSONObject()
+            val time = java.text.DateFormat.getDateTimeInstance().format(Date(item.optLong("scheduledAt")))
+            "\${time} — \${item.optString("status", "غير معروف")}: \${item.optString("caption", "").take(35)}"
+        }
+        android.app.AlertDialog.Builder(this)
+            .setTitle("جدول النشر")
+            .setItems(labels) { _, index ->
+                val item = items.optJSONObject(index) ?: return@setItems
+                val workName = item.optString("workName")
+                if (item.optString("status") == "مجدول") {
+                    android.app.AlertDialog.Builder(this)
+                        .setTitle("إدارة المنشور")
+                        .setMessage(labels[index])
+                        .setPositiveButton("إلغاء الجدولة") { _, _ ->
+                            WorkManager.getInstance(this).cancelUniqueWork(workName)
+                            updateScheduledPostStatus(workName, "أُلغيت الجدولة")
+                            Toast.makeText(this, "تم إلغاء الجدولة.", Toast.LENGTH_SHORT).show()
+                        }
+                        .setNegativeButton("إغلاق", null)
+                        .show()
+                } else {
+                    android.app.AlertDialog.Builder(this).setMessage(labels[index]).setPositiveButton("حسناً", null).show()
+                }
+            }
+            .setNegativeButton("إغلاق", null)
+            .show()
+    }
+
+    private fun updateScheduledPostStatus(workName: String, status: String) {
+        val current = try { JSONArray(prefs.getString("scheduled_posts", "[]")) } catch (_: Exception) { JSONArray() }
+        val updated = JSONArray()
+        for (i in 0 until current.length()) {
+            val item = current.optJSONObject(i) ?: continue
+            if (item.optString("workName") == workName) item.put("status", status).put("updatedAt", System.currentTimeMillis())
+            updated.put(item)
+        }
+        prefs.edit().putString("scheduled_posts", updated.toString()).apply()
+    }
+
+    private fun showTikTokAnalytics() {
+        val session = readTikTokSessionToken()
+        if (session.isNullOrBlank()) {
+            Toast.makeText(this, "اربط حساب TikTok أولاً.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val scopes = prefs.getString("tiktok_granted_scopes", "").orEmpty().split(",").map { it.trim() }
+        if (!scopes.contains("video.list")) {
+            Toast.makeText(this, "يلزم منح صلاحية video.list وإعادة ربط الحساب.", Toast.LENGTH_LONG).show()
+            return
+        }
+        Thread {
+            try {
+                val result = callTikTokWorker("/videos", session, JSONObject().put("max_count", 20).put("cursor", 0))
+                val videos = result.optJSONArray("videos") ?: JSONArray()
+                var views = 0L
+                var likes = 0L
+                var comments = 0L
+                var shares = 0L
+                val details = StringBuilder()
+                for (i in 0 until videos.length()) {
+                    val video = videos.optJSONObject(i) ?: continue
+                    views += video.optLong("view_count")
+                    likes += video.optLong("like_count")
+                    comments += video.optLong("comment_count")
+                    shares += video.optLong("share_count")
+                    val title = video.optString("title").ifBlank { video.optString("video_description") }.ifBlank { "فيديو بدون عنوان" }
+                    details.append("\\n\\n").append(title.take(70))
+                        .append("\\nمشاهدات: ").append(video.optLong("view_count"))
+                        .append(" | إعجابات: ").append(video.optLong("like_count"))
+                        .append("\\nتعليقات: ").append(video.optLong("comment_count"))
+                        .append(" | مشاركات: ").append(video.optLong("share_count"))
+                }
+                val summary = "آخر \${videos.length()} فيديوهات\\nإجمالي المشاهدات: $views\\nالإعجابات: $likes\\nالتعليقات: $comments\\nالمشاركات: $shares"
+                runOnUiThread {
+                    android.app.AlertDialog.Builder(this)
+                        .setTitle("تحليلات TikTok")
+                        .setMessage(summary + details.toString())
+                        .setPositiveButton("إغلاق", null)
+                        .show()
+                }
+            } catch (e: Exception) {
+                runOnUiThread { Toast.makeText(this, "تعذر جلب التحليلات: \${e.localizedMessage}", Toast.LENGTH_LONG).show() }
+            }
+        }.start()
+    }
+
     private fun startTikTokPublishFlow(scheduledAtMillis: Long? = null) {
         val session = readTikTokSessionToken()
         if (session.isNullOrBlank()) {
