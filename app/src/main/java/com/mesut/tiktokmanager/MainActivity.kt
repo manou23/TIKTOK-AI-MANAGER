@@ -13,6 +13,9 @@ import android.text.style.ForegroundColorSpan
 import android.text.style.BackgroundColorSpan
 import android.net.Uri
 import android.os.Bundle
+import android.speech.tts.TextToSpeech
+import android.speech.tts.UtteranceProgressListener
+import java.util.Locale
 import android.view.Gravity
 import android.view.View
 import android.widget.*
@@ -45,6 +48,7 @@ class MainActivity : Activity() {
     private lateinit var titleInput: EditText
     private lateinit var captionInput: EditText
     private lateinit var overlayTextInput: EditText
+    private lateinit var narrationInput: EditText
     private lateinit var imageInfo: TextView
     private lateinit var audioInfo: TextView
     private lateinit var statusInfo: TextView
@@ -157,7 +161,21 @@ class MainActivity : Activity() {
             refreshSelectionLabels()
         }
 
-        section("3. الصوت الخلفي")
+        section("3. التعليق الصوتي والصوت الخلفي")
+        narrationInput = EditText(this).apply {
+            hint = "اكتب نص التعليق الصوتي بالعربية ثم أنشئ الصوت"
+            textSize = 14f
+            minLines = 3
+            maxLines = 5
+            gravity = Gravity.TOP or Gravity.RIGHT
+            setTextColor(ink)
+            setPadding(dp(12), dp(12), dp(12), dp(12))
+            setText(prefs.getString("narration_text", ""))
+            setBackgroundColor(Color.WHITE)
+            layoutDirection = View.LAYOUT_DIRECTION_RTL
+        }
+        rootContent.addView(narrationInput, matchBottom())
+        actionSecondary("إنشاء تعليق صوتي عربي") { generateArabicVoiceover() }
         audioInfo = label(audioSummary(), 13, muted, false)
         rootContent.addView(audioInfo)
         actionSecondary("اختيار ملف صوتي") { pickAudio() }
@@ -260,7 +278,7 @@ class MainActivity : Activity() {
             return
         }
         val title = titleInput.text.toString().trim()
-        prefs.edit().putString("title", title).putString("caption", captionInput.text.toString()).putString("overlay_text", overlayTextInput.text.toString()).apply()
+        prefs.edit().putString("title", title).putString("caption", captionInput.text.toString()).putString("overlay_text", overlayTextInput.text.toString()).putString("narration_text", narrationInput.text.toString()).apply()
         exportButton.isEnabled = false
         statusInfo.text = "جارٍ تجهيز الفيديو... لا تغلق التطبيق."
         val output = File(cacheDir, "mesut_video_${System.currentTimeMillis()}.mp4")
@@ -325,6 +343,55 @@ class MainActivity : Activity() {
         } catch (e: Exception) {
             statusInfo.text = "تعذر بدء التصدير: ${e.localizedMessage}"
             exportButton.isEnabled = true
+        }
+    }
+
+
+    private fun generateArabicVoiceover() {
+        val spokenText = narrationInput.text.toString().trim()
+        if (spokenText.isEmpty()) {
+            Toast.makeText(this, "اكتب نص التعليق الصوتي أولاً", Toast.LENGTH_SHORT).show()
+            return
+        }
+        prefs.edit().putString("narration_text", spokenText).apply()
+        statusInfo.text = "جارٍ إنشاء التعليق الصوتي على الهاتف..."
+        lateinit var engine: TextToSpeech
+        engine = TextToSpeech(this) { result ->
+            if (result != TextToSpeech.SUCCESS) {
+                runOnUiThread { statusInfo.text = "تعذر تشغيل محرك تحويل النص إلى كلام." }
+                engine.shutdown()
+                return@TextToSpeech
+            }
+            val languageResult = engine.setLanguage(Locale("ar"))
+            if (languageResult == TextToSpeech.LANG_MISSING_DATA || languageResult == TextToSpeech.LANG_NOT_SUPPORTED) {
+                runOnUiThread { statusInfo.text = "محرك الصوت في هاتفك لا يدعم العربية حالياً. ثبّت بيانات صوت عربية من إعدادات تحويل النص إلى كلام." }
+                engine.shutdown()
+                return@TextToSpeech
+            }
+            engine.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+                override fun onStart(utteranceId: String) {}
+                override fun onDone(utteranceId: String) {
+                    runOnUiThread {
+                        audioUri = Uri.fromFile(File(filesDir, "mesut_arabic_voice.wav"))
+                        saveDraft()
+                        refreshSelectionLabels()
+                        statusInfo.text = "تم إنشاء التعليق الصوتي العربي. سيُستخدم تلقائياً عند تصدير الفيديو."
+                        engine.shutdown()
+                    }
+                }
+                override fun onError(utteranceId: String) {
+                    runOnUiThread {
+                        statusInfo.text = "فشل إنشاء التعليق الصوتي. تحقق من محرك تحويل النص إلى كلام."
+                        engine.shutdown()
+                    }
+                }
+            })
+            val target = File(filesDir, "mesut_arabic_voice.wav")
+            val resultCode = engine.synthesizeToFile(spokenText, Bundle(), target, "mesut_arabic_voice")
+            if (resultCode == TextToSpeech.ERROR) {
+                runOnUiThread { statusInfo.text = "تعذر بدء إنشاء الصوت." }
+                engine.shutdown()
+            }
         }
     }
 
