@@ -38,7 +38,17 @@ class TikTokScheduledPublishWorker(
             tempFile = workingFile
             val source = applicationContext.contentResolver.openInputStream(uri)
                 ?: throw IllegalStateException("تعذر فتح ملف الفيديو المجدول")
-            source.use { input -> FileOutputStream(workingFile).use { output -> input.copyTo(output) } }
+            source.use { input ->
+                FileOutputStream(workingFile).use { output ->
+                    val buffer = ByteArray(64 * 1024)
+                    while (true) {
+                        currentCoroutineContext().ensureActive()
+                        val read = input.read(buffer)
+                        if (read < 0) break
+                        output.write(buffer, 0, read)
+                    }
+                }
+            }
             val videoSize = workingFile.length()
             if (videoSize <= 0L) throw IllegalStateException("ملف الفيديو المجدول فارغ")
             if (videoSize > 4L * 1024L * 1024L * 1024L) throw IllegalStateException("حجم الفيديو يتجاوز الحد الأقصى المسموح به للنشر")
