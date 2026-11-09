@@ -42,6 +42,9 @@ class MainActivity : Activity() {
     private lateinit var statusInfo: TextView
     private lateinit var exportButton: Button
     private lateinit var rootContent: LinearLayout
+    private lateinit var sceneListContainer: LinearLayout
+    private lateinit var durationSpinner: Spinner
+    private lateinit var qualitySpinner: Spinner
     private var lastExportUri: Uri? = null
 
     companion object {
@@ -120,6 +123,11 @@ class MainActivity : Activity() {
         section("2. الصور والمشاهد")
         imageInfo = label(imageSummary(), 13, muted, false)
         rootContent.addView(imageInfo)
+        sceneListContainer = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutDirection = View.LAYOUT_DIRECTION_RTL
+        }
+        rootContent.addView(sceneListContainer)
         action("＋  اختيار صور من الهاتف") { pickImages() }
         actionSecondary("مسح الصور المختارة") {
             imageUris.clear()
@@ -137,8 +145,36 @@ class MainActivity : Activity() {
             refreshSelectionLabels()
         }
 
-        section("4. إنشاء الفيديو")
-        cardText("سيتم ترتيب الصور في فيديو متتابع، مدة كل صورة 4 ثوانٍ، بمعدل 30 إطاراً في الثانية. يمكنك إضافة موسيقى أو تعليق صوتي محفوظ على هاتفك.")
+        section("4. إعدادات التحرير")
+        rootContent.addView(label("مدة كل مشهد", 13, muted, true))
+        durationSpinner = Spinner(this).apply {
+            adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item,
+                listOf("3 ثوانٍ", "4 ثوانٍ", "5 ثوانٍ", "6 ثوانٍ", "8 ثوانٍ", "10 ثوانٍ"))
+            setSelection(prefs.getInt("scene_duration_index", 1).coerceIn(0, 5))
+            onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
+                override fun onNothingSelected(parent: android.widget.AdapterView<*>?) {}
+                override fun onItemSelected(parent: android.widget.AdapterView<*>?, view: View?, position: Int, id: Long) {
+                    prefs.edit().putInt("scene_duration_index", position).apply()
+                }
+            }
+        }
+        rootContent.addView(durationSpinner, matchBottom())
+        rootContent.addView(label("دقة الفيديو", 13, muted, true))
+        qualitySpinner = Spinner(this).apply {
+            adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item,
+                listOf("1080p — Full HD", "720p — HD"))
+            setSelection(prefs.getInt("quality_index", 0).coerceIn(0, 1))
+            onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
+                override fun onNothingSelected(parent: android.widget.AdapterView<*>?) {}
+                override fun onItemSelected(parent: android.widget.AdapterView<*>?, view: View?, position: Int, id: Long) {
+                    prefs.edit().putInt("quality_index", position).apply()
+                }
+            }
+        }
+        rootContent.addView(qualitySpinner, matchBottom())
+
+        section("5. إنشاء الفيديو")
+        cardText("يمكنك الآن إعادة ترتيب المشاهد أو حذف أي صورة، واختيار مدة المشهد ودقة 1080p أو 720p. معدل الإطارات 30 إطاراً في الثانية.")
         statusInfo = label("جاهز لإنشاء فيديو جديد.", 14, muted, false).apply { setPadding(0, dp(12), 0, dp(8)) }
         rootContent.addView(statusInfo)
         exportButton = action("إنشاء فيديو MP4") { exportVideo() }
@@ -206,12 +242,15 @@ class MainActivity : Activity() {
         exportButton.isEnabled = false
         statusInfo.text = "جارٍ تجهيز الفيديو... لا تغلق التطبيق."
         val output = File(cacheDir, "mesut_video_${System.currentTimeMillis()}.mp4")
+        val durationMs = listOf(3_000L, 4_000L, 5_000L, 6_000L, 8_000L, 10_000L)[durationSpinner.selectedItemPosition.coerceIn(0, 5)]
+        val width = if (qualitySpinner.selectedItemPosition == 1) 720 else 1080
+        val height = if (qualitySpinner.selectedItemPosition == 1) 1280 else 1920
         try {
             val clips = imageUris.map { uri ->
-                val media = MediaItem.Builder().setUri(uri).setImageDurationMs(4_000).build()
+                val media = MediaItem.Builder().setUri(uri).setImageDurationMs(durationMs).build()
                 EditedMediaItem.Builder(media)
                     .setFrameRate(30)
-                    .setEffects(Effects(emptyList(), listOf(Presentation.createForWidthAndHeight(1080, 1920, Presentation.LAYOUT_SCALE_TO_FIT_WITH_CROP))))
+                    .setEffects(Effects(emptyList(), listOf(Presentation.createForWidthAndHeight(width, height, Presentation.LAYOUT_SCALE_TO_FIT_WITH_CROP))))
                     .build()
             }
             val videoSequence = EditedMediaItemSequence.Builder(clips).build()
@@ -306,9 +345,64 @@ class MainActivity : Activity() {
     private fun refreshSelectionLabels() {
         imageInfo.text = imageSummary()
         audioInfo.text = audioSummary()
+        renderSceneList()
     }
 
-    private fun imageSummary() = if (imageUris.isEmpty()) "لم تختر صوراً بعد." else "تم اختيار ${imageUris.size} صورة."
+    private fun imageSummary() = if (imageUris.isEmpty()) "لم تختر صوراً بعد." else "تم اختيار ${imageUris.size} صورة. يمكنك تغيير ترتيبها أدناه."
+    private fun renderSceneList() {
+        if (!::sceneListContainer.isInitialized) return
+        sceneListContainer.removeAllViews()
+        imageUris.forEachIndexed { index, uri ->
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                layoutDirection = View.LAYOUT_DIRECTION_RTL
+                setPadding(dp(8), dp(5), dp(8), dp(5))
+                setBackgroundColor(Color.WHITE)
+            }
+            val name = TextView(this).apply {
+                text = "المشهد ${index + 1}"
+                textSize = 13f
+                setTextColor(ink)
+                setTypeface(typeface, Typeface.BOLD)
+            }
+            row.addView(name, LinearLayout.LayoutParams(0, -2, 1f))
+            row.addView(smallSceneButton("↑") {
+                if (index > 0) {
+                    val item = imageUris.removeAt(index)
+                    imageUris.add(index - 1, item)
+                    saveDraft()
+                    refreshSelectionLabels()
+                }
+            })
+            row.addView(smallSceneButton("↓") {
+                if (index < imageUris.lastIndex) {
+                    val item = imageUris.removeAt(index)
+                    imageUris.add(index + 1, item)
+                    saveDraft()
+                    refreshSelectionLabels()
+                }
+            })
+            row.addView(smallSceneButton("حذف") {
+                imageUris.removeAt(index)
+                saveDraft()
+                refreshSelectionLabels()
+            })
+            sceneListContainer.addView(row, matchBottom())
+        }
+    }
+
+    private fun smallSceneButton(caption: String, onClick: () -> Unit) = Button(this).apply {
+        text = caption
+        textSize = 11f
+        isAllCaps = false
+        minWidth = dp(42)
+        minHeight = dp(38)
+        setPadding(dp(4), 0, dp(4), 0)
+        setTextColor(ink)
+        setBackgroundColor(Color.rgb(230, 235, 241))
+        setOnClickListener { onClick() }
+    }
     private fun audioSummary() = if (audioUri == null) "لم تتم إضافة صوت. يمكن إنشاء فيديو صامت." else "تم اختيار ملف صوتي للخلفية."
 
     private fun section(text: String) {
@@ -363,7 +457,7 @@ class MainActivity : Activity() {
     }
 
     private fun bottomNav() = TextView(this).apply {
-        text = "MESUT TikTok AI Manager  •  الإصدار 1.1.0"
+        text = "MESUT TikTok AI Manager  •  الإصدار 1.2.0"
         textSize = 11f
         gravity = Gravity.CENTER
         setTextColor(muted)
