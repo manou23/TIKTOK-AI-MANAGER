@@ -17,8 +17,8 @@ android {
         applicationId = "com.mesut.tiktokmanager"
         minSdk = 29
         targetSdk = 35
-        versionCode = 12
-        versionName = "2.0.1"
+        versionCode = 13
+        versionName = "2.0.2"
         buildConfigField("String", "TIKTOK_CLIENT_KEY", "\"$tiktokClientKey\"")
         buildConfigField("String", "TIKTOK_REDIRECT_URI", "\"$tiktokRedirectUri\"")
         buildConfigField("String", "TIKTOK_WORKER_URL", "\"$tiktokWorkerUrl\"")
