@@ -131,6 +131,222 @@ class MainActivity : Activity() {
 
 
 
+
+    private fun startTikTokPublishFlow() {
+        val session = readTikTokSessionToken()
+        if (session.isNullOrBlank()) {
+            Toast.makeText(this, "اربط حساب TikTok أولاً.", Toast.LENGTH_LONG).show()
+            return
+        }
+        if (lastExportUri == null) {
+            Toast.makeText(this, "أنشئ فيديو MP4 أولاً.", Toast.LENGTH_LONG).show()
+            return
+        }
+        Thread {
+            try {
+                val result = callTikTokWorker("/creator-info", session, JSONObject())
+                val creator = result.optJSONObject("creator") ?: throw IllegalStateException("لم تصل معلومات حساب TikTok")
+                val privacy = creator.optJSONArray("privacy_level_options") ?: JSONArray()
+                val options = (0 until privacy.length()).map { privacy.optString(it) }.filter { it.isNotBlank() }
+                if (options.isEmpty()) throw IllegalStateException("لم يُرجع TikTok خيارات الخصوصية لهذا الحساب")
+                runOnUiThread { showTikTokPublishDialog(session, options) }
+            } catch (e: Exception) {
+                runOnUiThread { Toast.makeText(this, "تعذر تجهيز النشر: ${e.localizedMessage}", Toast.LENGTH_LONG).show() }
+            }
+        }.start()
+    }
+
+    private fun showTikTokPublishDialog(session: String, privacyOptions: List<String>) {
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(8), dp(20), dp(4))
+        }
+        container.addView(label("اختر من يمكنه مشاهدة الفيديو:", 14, ink, true))
+        val radioGroup = RadioGroup(this).apply { orientation = RadioGroup.VERTICAL }
+        val labels = mapOf(
+            "PUBLIC_TO_EVERYONE" to "عام للجميع",
+            "MUTUAL_FOLLOW_FRIENDS" to "الأصدقاء المتبادلون",
+            "FOLLOWER_OF_CREATOR" to "المتابعون",
+            "SELF_ONLY" to "أنا فقط"
+        )
+        var selectedPrivacy = privacyOptions.first()
+        privacyOptions.forEachIndexed { index, value ->
+            val radio = RadioButton(this).apply {
+                text = labels[value] ?: value
+                id = View.generateViewId()
+                isChecked = index == 0
+                setOnClickListener { selectedPrivacy = value }
+            }
+            if (index == 0) selectedPrivacy = value
+            radioGroup.addView(radio)
+        }
+        container.addView(radioGroup)
+        val disableComments = CheckBox(this).apply { text = "تعطيل التعليقات" }
+        val disableDuet = CheckBox(this).apply { text = "تعطيل Duet" }
+        val disableStitch = CheckBox(this).apply { text = "تعطيل Stitch" }
+        val aiGenerated = CheckBox(this).apply { text = "وضع علامة على الفيديو كمحتوى مولّد بالذكاء الاصطناعي" }
+        container.addView(disableComments)
+        container.addView(disableDuet)
+        container.addView(disableStitch)
+        container.addView(aiGenerated)
+        val caption = captionInput.text.toString().trim().ifBlank { titleInput.text.toString().trim() }.take(2200)
+        android.app.AlertDialog.Builder(this)
+            .setTitle("تأكيد النشر على TikTok")
+            .setMessage("سيتم إرسال آخر فيديو إلى حسابك عبر واجهة TikTok الرسمية. هذا إجراء حقيقي لا يمكن التراجع عنه بعد اكتماله. الوصف: ${caption.ifBlank { "بدون وصف" }}")
+            .setView(container)
+            .setNegativeButton("إلغاء", null)
+            .setPositiveButton("تأكيد وبدء النشر") { _, _ ->
+                if (caption.isBlank()) {
+                    Toast.makeText(this, "أضف عنواناً أو وصفاً قبل النشر.", Toast.LENGTH_LONG).show()
+                } else {
+                    uploadAndPublishToTikTok(session, selectedPrivacy, caption, disableComments.isChecked,
+                        disableDuet.isChecked, disableStitch.isChecked, aiGenerated.isChecked)
+                }
+            }
+            .show()
+    }
+
+    private fun copyLastVideoToCache(): File {
+        val uri = lastExportUri ?: throw IllegalStateException("لا يوجد فيديو أخير")
+        val file = File(cacheDir, "mesut_tiktok_upload.mp4")
+        val input = contentResolver.openInputStream(uri) ?: throw IllegalStateException("تعذر قراءة ملف الفيديو")
+        input.use { source -> FileOutputStream(file).use { target -> source.copyTo(target) } }
+        if (!file.exists() || file.length() <= 0L) throw IllegalStateException("ملف الفيديو فارغ")
+        return file
+    }
+
+    private fun uploadAndPublishToTikTok(
+        session: String,
+        privacy: String,
+        caption: String,
+        disableComments: Boolean,
+        disableDuet: Boolean,
+        disableStitch: Boolean,
+        isAiGenerated: Boolean
+    ) {
+        exportButton.isEnabled = false
+        statusInfo.text = "جارٍ تجهيز الفيديو للنشر على TikTok..."
+        Thread {
+            var uploadFile: File? = null
+            try {
+                uploadFile = copyLastVideoToCache()
+                val chunkSize = 5 * 1024 * 1024
+                val totalChunks = ((uploadFile.length() + chunkSize - 1) / chunkSize).toInt()
+                val initPayload = JSONObject()
+                    .put("title", caption)
+                    .put("privacy_level", privacy)
+                    .put("video_size", uploadFile.length())
+                    .put("chunk_size", chunkSize)
+                    .put("total_chunk_count", totalChunks)
+                    .put("disable_comment", disableComments)
+                    .put("disable_duet", disableDuet)
+                    .put("disable_stitch", disableStitch)
+                    .put("is_aigc", isAiGenerated)
+                val init = callTikTokWorker("/publish/init", session, initPayload)
+                if (!init.optBoolean("ok")) throw IllegalStateException(init.optString("error", "فشل تهيئة النشر"))
+                val publishId = init.getString("publish_id")
+                val uploadUrl = init.getString("upload_url")
+                prefs.edit().putString("last_tiktok_publish_id", publishId).apply()
+                uploadFileChunksToTikTok(uploadFile, uploadUrl, chunkSize)
+                var finalStatus = "PROCESSING_UPLOAD"
+                var completed = false
+                for (attempt in 0 until 15) {
+                    val statusResult = callTikTokWorker("/publish/status", session, JSONObject().put("publish_id", publishId))
+                    val statusObject = statusResult.optJSONObject("status") ?: JSONObject()
+                    finalStatus = statusObject.optString("status", "UNKNOWN")
+                    if (finalStatus == "PUBLISH_COMPLETE") {
+                        completed = true
+                        break
+                    }
+                    if (finalStatus == "FAILED") {
+                        throw IllegalStateException(statusObject.optString("fail_reason", "رفض TikTok نشر الفيديو"))
+                    }
+                    Thread.sleep(2_000)
+                }
+                runOnUiThread {
+                    statusInfo.text = if (completed) {
+                        "تم نشر الفيديو على TikTok بنجاح."
+                    } else {
+                        "اكتمل رفع الفيديو، وحالته لدى TikTok: $finalStatus. استخدم متابعة آخر عملية نشر للتحقق لاحقاً."
+                    }
+                    Toast.makeText(this, if (completed) "تم النشر بنجاح" else "تم الرفع وجارٍ المعالجة لدى TikTok", Toast.LENGTH_LONG).show()
+                    exportButton.isEnabled = true
+                }
+            } catch (e: Exception) {
+                runOnUiThread {
+                    statusInfo.text = "تعذر النشر على TikTok: ${e.localizedMessage}"
+                    Toast.makeText(this, "فشل النشر: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
+                    exportButton.isEnabled = true
+                }
+            } finally {
+                uploadFile?.delete()
+            }
+        }.start()
+    }
+
+    private fun uploadFileChunksToTikTok(file: File, uploadUrl: String, chunkSize: Int) {
+        val totalSize = file.length()
+        FileInputStream(file).use { input ->
+            var start = 0L
+            while (start < totalSize) {
+                val length = minOf(chunkSize.toLong(), totalSize - start).toInt()
+                val bytes = ByteArray(length)
+                var offset = 0
+                while (offset < length) {
+                    val count = input.read(bytes, offset, length - offset)
+                    if (count < 0) throw IllegalStateException("انتهى ملف الفيديو قبل اكتمال الرفع")
+                    offset += count
+                }
+                val end = start + length - 1
+                val connection = (URL(uploadUrl).openConnection() as HttpURLConnection).apply {
+                    requestMethod = "PUT"
+                    connectTimeout = 30_000
+                    readTimeout = 60_000
+                    doOutput = true
+                    setFixedLengthStreamingMode(length)
+                    setRequestProperty("Content-Type", "video/mp4")
+                    setRequestProperty("Content-Range", "bytes $start-$end/$totalSize")
+                }
+                try {
+                    connection.outputStream.use { it.write(bytes) }
+                    val responseCode = connection.responseCode
+                    if (responseCode !in 200..299) {
+                        val error = connection.errorStream?.bufferedReader()?.use { it.readText() }.orEmpty()
+                        throw IllegalStateException("فشل رفع جزء الفيديو (HTTP $responseCode): $error")
+                    }
+                } finally {
+                    connection.disconnect()
+                }
+                start += length
+                val percent = (start * 100 / totalSize).toInt()
+                runOnUiThread { statusInfo.text = "جارٍ رفع الفيديو إلى TikTok: $percent%" }
+            }
+        }
+    }
+
+    private fun checkLastTikTokPublishStatus() {
+        val session = readTikTokSessionToken()
+        val publishId = prefs.getString("last_tiktok_publish_id", null)
+        if (session.isNullOrBlank() || publishId.isNullOrBlank()) {
+            Toast.makeText(this, "لا توجد عملية نشر سابقة لمتابعتها.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        Thread {
+            try {
+                val result = callTikTokWorker("/publish/status", session, JSONObject().put("publish_id", publishId))
+                val statusObject = result.optJSONObject("status") ?: JSONObject()
+                val status = statusObject.optString("status", "UNKNOWN")
+                val detail = statusObject.optString("fail_reason", "")
+                runOnUiThread {
+                    statusInfo.text = if (detail.isNotBlank()) "حالة النشر: $status — $detail" else "حالة النشر لدى TikTok: $status"
+                    Toast.makeText(this, statusInfo.text, Toast.LENGTH_LONG).show()
+                }
+            } catch (e: Exception) {
+                runOnUiThread { Toast.makeText(this, "تعذر جلب حالة النشر: ${e.localizedMessage}", Toast.LENGTH_LONG).show() }
+            }
+        }.start()
+    }
+
     private fun connectTikTokAccount() {
         if (BuildConfig.TIKTOK_CLIENT_KEY.isBlank() || BuildConfig.TIKTOK_WORKER_URL.isBlank()) {
             Toast.makeText(this, "يلزم إعداد TIKTOK_CLIENT_KEY و TIKTOK_WORKER_URL في إعدادات البناء أولاً.", Toast.LENGTH_LONG).show()
@@ -644,6 +860,8 @@ class MainActivity : Activity() {
         tiktokAccountInfo = label(if (readTikTokSessionToken() != null) "يوجد حساب TikTok مربوط بهذا التطبيق." else "لم يتم ربط حساب TikTok بعد.", 13, muted, false)
         rootContent.addView(tiktokAccountInfo)
         actionSecondary("ربط حساب TikTok رسمياً") { connectTikTokAccount() }
+        actionSecondary("نشر آخر فيديو على TikTok") { startTikTokPublishFlow() }
+        actionSecondary("متابعة آخر عملية نشر") { checkLastTikTokPublishStatus() }
         actionSecondary("فصل حساب TikTok") { disconnectTikTokAccount() }
 
         section("ملاحظة النشر")
