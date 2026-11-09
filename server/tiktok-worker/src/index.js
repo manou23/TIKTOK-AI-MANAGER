@@ -1,5 +1,15 @@
 const JSON_HEADERS = { "content-type": "application/json; charset=utf-8" };
 const SESSION_TTL = 60 * 60 * 24 * 365;
+const FIVE_MB = 5 * 1024 * 1024;
+const MAX_CHUNK = 64 * 1024 * 1024;
+
+export function expectedChunkCount(videoSize, chunkSize) {
+  if (!Number.isSafeInteger(videoSize) || videoSize <= 0 ||
+      !Number.isSafeInteger(chunkSize) || chunkSize <= 0) {
+    throw new Error("Video size and chunk size must be positive safe integers");
+  }
+  return Math.ceil(videoSize / chunkSize);
+}
 
 function response(body, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { ...JSON_HEADERS, "cache-control": "no-store" } });
@@ -111,11 +121,7 @@ async function tiktokPost(path, account, body) {
 export default {
   async fetch(request, env) {
     if (request.method === "OPTIONS") {
-      return new Response(null, { status: 204, headers: {
-        "access-control-allow-origin": "*",
-        "access-control-allow-methods": "GET,POST,OPTIONS",
-        "access-control-allow-headers": "authorization,content-type"
-      }});
+      return new Response(null, { status: 204, headers: { "cache-control": "no-store" } });
     }
     const url = new URL(request.url);
     try {
@@ -183,8 +189,11 @@ export default {
             !Number.isSafeInteger(input.total_chunk_count) || input.total_chunk_count <= 0 || input.total_chunk_count > 1000) {
           return response({ ok: false, error: "Invalid title, privacy, or upload chunk metadata" }, 400);
         }
-        const expectedChunks = Math.max(1, Math.floor(input.video_size / input.chunk_size));
-        if (input.total_chunk_count !== expectedChunks || (input.video_size >= 5 * 1024 * 1024 && input.chunk_size < 5 * 1024 * 1024)) {
+        const expectedChunks = expectedChunkCount(input.video_size, input.chunk_size);
+        const validChunkSize = input.video_size < FIVE_MB
+          ? input.chunk_size === input.video_size
+          : input.chunk_size >= FIVE_MB && input.chunk_size <= MAX_CHUNK && input.chunk_size <= input.video_size;
+        if (input.total_chunk_count !== expectedChunks || expectedChunks > 1000 || !validChunkSize) {
           return response({ ok: false, error: "Chunk count or size does not meet TikTok media-transfer rules" }, 400);
         }
         const creator = await tiktokPost("/v2/post/publish/creator_info/query/", session.account, {});
