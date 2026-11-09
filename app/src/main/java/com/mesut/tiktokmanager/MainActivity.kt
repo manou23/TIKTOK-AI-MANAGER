@@ -45,6 +45,7 @@ class MainActivity : Activity() {
     private val prefs: SharedPreferences by lazy { getSharedPreferences("mesut_creator", Context.MODE_PRIVATE) }
     private val imageUris = mutableListOf<Uri>()
     private var audioUri: Uri? = null
+    private var audioShouldLoop = true
     private lateinit var titleInput: EditText
     private lateinit var captionInput: EditText
     private lateinit var overlayTextInput: EditText
@@ -77,6 +78,7 @@ class MainActivity : Activity() {
             for (i in 0 until json.length()) imageUris.add(Uri.parse(json.getString(i)))
         } catch (_: Exception) { imageUris.clear() }
         audioUri = prefs.getString("audio", null)?.let { Uri.parse(it) }
+        audioShouldLoop = prefs.getBoolean("audio_loop", true)
         lastExportUri = prefs.getString("last_export_uri", null)?.let { Uri.parse(it) }
     }
 
@@ -84,7 +86,7 @@ class MainActivity : Activity() {
         val json = JSONArray()
         imageUris.forEach { json.put(it.toString()) }
         prefs.edit().putString("images", json.toString())
-            .putString("audio", audioUri?.toString()).apply()
+            .putString("audio", audioUri?.toString()).putBoolean("audio_loop", audioShouldLoop).apply()
     }
 
     private fun showStudio() {
@@ -181,6 +183,7 @@ class MainActivity : Activity() {
         actionSecondary("اختيار ملف صوتي") { pickAudio() }
         actionSecondary("إزالة الصوت") {
             audioUri = null
+            audioShouldLoop = true
             saveDraft()
             refreshSelectionLabels()
         }
@@ -265,6 +268,7 @@ class MainActivity : Activity() {
         } else if (requestCode == PICK_AUDIO) {
             data.data?.let {
                 audioUri = it
+                audioShouldLoop = true
                 try { contentResolver.takePersistableUriPermission(it, Intent.FLAG_GRANT_READ_URI_PERMISSION) } catch (_: Exception) {}
                 saveDraft()
                 refreshSelectionLabels()
@@ -311,7 +315,7 @@ class MainActivity : Activity() {
             val sequences = mutableListOf(videoSequence)
             audioUri?.let { uri ->
                 val audioItem = EditedMediaItem.Builder(MediaItem.fromUri(uri)).build()
-                sequences.add(EditedMediaItemSequence.Builder(audioItem).setIsLooping(true).build())
+                sequences.add(EditedMediaItemSequence.Builder(audioItem).setIsLooping(audioShouldLoop).build())
             }
             val composition = Composition.Builder(sequences).build()
             val transformer = Transformer.Builder(this)
@@ -373,6 +377,7 @@ class MainActivity : Activity() {
                 override fun onDone(utteranceId: String) {
                     runOnUiThread {
                         audioUri = Uri.fromFile(File(filesDir, "mesut_arabic_voice.wav"))
+                        audioShouldLoop = false
                         saveDraft()
                         refreshSelectionLabels()
                         statusInfo.text = "تم إنشاء التعليق الصوتي العربي. سيُستخدم تلقائياً عند تصدير الفيديو."
