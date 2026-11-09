@@ -239,6 +239,14 @@ export async function handleInstagramRequest(request, env, url) {
     if (request.method === "POST" && url.pathname === "/instagram/me") {
       return json({ ok: true, account: { id: session.igUserId, username: session.account.username } });
     }
+    if (request.method === "POST" && url.pathname === "/instagram/disconnect") {
+      const header = request.headers.get("authorization") || "";
+      const token = header.startsWith("Bearer ") ? header.slice(7).trim() : "";
+      const sessionHash = await hash(token);
+      await env.TOKENS.delete(`ig_session:${sessionHash}`);
+      await env.TOKENS.delete(`ig_account:${session.igUserId}`);
+      return json({ ok: true });
+    }
     if (request.method === "PUT" && url.pathname === "/instagram/media/upload") return await uploadMedia(request, env, session);
     if (request.method === "POST" && url.pathname === "/instagram/publish/container") return await createReel(request, env, session, cfg);
     if (request.method === "POST" && url.pathname === "/instagram/publish/status") return await containerStatus(request, env, session, cfg);
