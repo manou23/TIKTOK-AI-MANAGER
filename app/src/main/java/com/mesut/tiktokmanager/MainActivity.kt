@@ -7,8 +7,6 @@ import android.content.Intent
 import android.content.SharedPreferences
 import android.graphics.Color
 import android.graphics.Bitmap
-import android.security.keystore.KeyGenParameterSpec
-import android.security.keystore.KeyProperties
 import android.util.Base64
 import android.media.MediaMetadataRetriever
 import android.graphics.Typeface
@@ -22,6 +20,9 @@ import android.os.Bundle
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import java.util.Locale
+import java.util.Calendar
+import java.util.Date
+import java.util.concurrent.TimeUnit
 import android.view.Gravity
 import android.view.View
 import android.widget.*
@@ -44,6 +45,12 @@ import androidx.media3.transformer.EditedMediaItemSequence
 import androidx.media3.transformer.ExportException
 import androidx.media3.transformer.ExportResult
 import androidx.media3.transformer.Transformer
+import androidx.work.Constraints
+import androidx.work.ExistingWorkPolicy
+import androidx.work.NetworkType
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.WorkManager
+import androidx.work.workDataOf
 import com.tiktok.open.sdk.auth.AuthApi
 import com.tiktok.open.sdk.auth.AuthRequest
 import com.tiktok.open.sdk.auth.utils.PKCEUtils
@@ -127,7 +134,7 @@ class MainActivity : Activity() {
 
 
 
-    private fun startTikTokPublishFlow() {
+    private fun startTikTokPublishFlow(scheduledAtMillis: Long? = null) {
         val session = readTikTokSessionToken()
         if (session.isNullOrBlank()) {
             Toast.makeText(this, "اربط حساب TikTok أولاً.", Toast.LENGTH_LONG).show()
@@ -149,14 +156,14 @@ class MainActivity : Activity() {
                 val privacy = creator.optJSONArray("privacy_level_options") ?: JSONArray()
                 val options = (0 until privacy.length()).map { privacy.optString(it) }.filter { it.isNotBlank() }
                 if (options.isEmpty()) throw IllegalStateException("لم يُرجع TikTok خيارات الخصوصية لهذا الحساب")
-                runOnUiThread { showTikTokPublishDialog(session, options) }
+                runOnUiThread { showTikTokPublishDialog(session, options, scheduledAtMillis) }
             } catch (e: Exception) {
                 runOnUiThread { Toast.makeText(this, "تعذر تجهيز النشر: ${e.localizedMessage}", Toast.LENGTH_LONG).show() }
             }
         }.start()
     }
 
-    private fun showTikTokPublishDialog(session: String, privacyOptions: List<String>) {
+    private fun showTikTokPublishDialog(session: String, privacyOptions: List<String>, scheduledAtMillis: Long? = null) {
         val container = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(20), dp(8), dp(20), dp(4))
@@ -192,15 +199,20 @@ class MainActivity : Activity() {
         val caption = captionInput.text.toString().trim().ifBlank { titleInput.text.toString().trim() }.take(2200)
         android.app.AlertDialog.Builder(this)
             .setTitle("تأكيد النشر على TikTok")
-            .setMessage("سيتم إرسال آخر فيديو إلى حسابك عبر واجهة TikTok الرسمية. هذا إجراء حقيقي لا يمكن التراجع عنه بعد اكتماله. الوصف: ${caption.ifBlank { "بدون وصف" }}")
+            .setMessage((if (scheduledAtMillis == null) "سيتم نشر آخر فيديو الآن عبر TikTok الرسمي." else "سيتم جدولة الفيديو للموعد: " + java.text.DateFormat.getDateTimeInstance().format(Date(scheduledAtMillis))) + " هذا إجراء حقيقي. الوصف: ${caption.ifBlank { "بدون وصف" }}")
             .setView(container)
             .setNegativeButton("إلغاء", null)
             .setPositiveButton("تأكيد وبدء النشر") { _, _ ->
                 if (caption.isBlank()) {
                     Toast.makeText(this, "أضف عنواناً أو وصفاً قبل النشر.", Toast.LENGTH_LONG).show()
                 } else {
-                    uploadAndPublishToTikTok(session, selectedPrivacy, caption, disableComments.isChecked,
-                        disableDuet.isChecked, disableStitch.isChecked, aiGenerated.isChecked)
+                    if (scheduledAtMillis == null) {
+                        uploadAndPublishToTikTok(session, selectedPrivacy, caption, disableComments.isChecked,
+                            disableDuet.isChecked, disableStitch.isChecked, aiGenerated.isChecked)
+                    } else {
+                        enqueueScheduledTikTokPost(scheduledAtMillis, selectedPrivacy, caption, disableComments.isChecked,
+                            disableDuet.isChecked, disableStitch.isChecked, aiGenerated.isChecked)
+                    }
                 }
             }
             .show()
@@ -365,7 +377,7 @@ class MainActivity : Activity() {
             prefs.edit().putString("tiktok_code_verifier", verifier).putString("tiktok_oauth_state", state).apply()
             val request = AuthRequest(
                 clientKey = BuildConfig.TIKTOK_CLIENT_KEY,
-                scope = "user.info.basic,video.publish",
+                scope = "user.info.basic,video.publish,video.list",
                 redirectUri = BuildConfig.TIKTOK_REDIRECT_URI,
                 codeVerifier = verifier,
                 state = state
@@ -832,11 +844,14 @@ class MainActivity : Activity() {
         rootContent.addView(tiktokAccountInfo)
         actionSecondary("ربط حساب TikTok رسمياً") { connectTikTokAccount() }
         actionSecondary("نشر آخر فيديو على TikTok") { startTikTokPublishFlow() }
+        actionSecondary("جدولة نشر آخر فيديو") { chooseTikTokScheduleTime() }
+        actionSecondary("المنشورات المجدولة") { showScheduledPostsDialog() }
+        actionSecondary("تحليلات TikTok") { showTikTokAnalytics() }
         actionSecondary("متابعة آخر عملية نشر") { checkLastTikTokPublishStatus() }
         actionSecondary("فصل حساب TikTok") { disconnectTikTokAccount() }
 
         section("ملاحظة النشر")
-        cardText("بعد إنشاء الفيديو، اضغط مشاركة واختر TikTok من قائمة التطبيقات. ستراجع الفيديو وتؤكد النشر داخل TikTok بنفسك. النشر المباشر من داخل التطبيق يحتاج موافقة TikTok الرسمية.")
+        cardText("يمكنك مشاركة الفيديو داخل TikTok أو استخدام النشر المباشر والجدولة بعد ربط الحساب وتفعيل صلاحيات TikTok الرسمية. سيطلب التطبيق تأكيدك قبل كل عملية نشر.")
         page.addView(bottomNav())
         setContentView(page)
     }
