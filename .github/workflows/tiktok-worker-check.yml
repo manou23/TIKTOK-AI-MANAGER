@@ -21,7 +21,7 @@ jobs:
         with:
           node-version: "22"
       - name: Check Worker JavaScript syntax
-        run: node --check server/tiktok-worker/src/index.js
+        run: |\n          node --check server/tiktok-worker/src/index.js\n          node --check server/tiktok-worker/src/instagram.js
       - name: Run upload chunk tests
         working-directory: server/tiktok-worker
         run: npm test
