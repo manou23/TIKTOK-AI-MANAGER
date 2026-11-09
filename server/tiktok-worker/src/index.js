@@ -214,8 +214,13 @@ export default {
       if (request.method === "POST" && url.pathname === "/videos") {
         const session = await requireSession(request, env);
         const input = await request.json().catch(() => ({}));
+        const maxCount = Number(input.max_count || 20);
+        const cursor = Number(input.cursor || 0);
+        if (!Number.isSafeInteger(maxCount) || maxCount < 1 || maxCount > 20 || !Number.isSafeInteger(cursor) || cursor < 0) {
+          return response({ ok: false, error: "Invalid video-list pagination values" }, 400);
+        }
         const fields = "id,title,view_count,like_count,comment_count,share_count,create_time,share_url";
-        const data = await tiktokPost("/v2/video/list/?fields=" + fields, session.account, { max_count: Math.min(20, Math.max(1, Number(input.max_count || 20))), cursor: Number(input.cursor || 0) });
+        const data = await tiktokPost("/v2/video/list/?fields=" + fields, session.account, { max_count: maxCount, cursor });
         return response({ ok: true, videos: data.videos || [], cursor: data.cursor || 0, has_more: Boolean(data.has_more) });
       }
 
